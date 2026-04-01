@@ -1,121 +1,297 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState } from "react";
 
-function App() {
-  const [count, setCount] = useState(0)
+const PARENT_PIN = "0650";
+
+const CATEGORIES = [
+  { id: "chores", label: "Chores", emoji: "🧹", color: "#F59E0B" },
+  { id: "behavior", label: "Behavior", emoji: "⭐", color: "#10B981" },
+  { id: "schoolwork", label: "Schoolwork", emoji: "📚", color: "#3B82F6" },
+  { id: "character", label: "Character", emoji: "💪", color: "#8B5CF6" },
+];
+
+const BOYS = [
+  { id: "orion", name: "Orion", avatar: "🚀", grad: ["#1D4ED8", "#0EA5E9"] },
+  { id: "malachi", name: "Malachi", avatar: "⚡", grad: ["#15803D", "#16A34A"] },
+];
+
+const FH = "'Boogaloo', 'Arial Black', sans-serif";
+const FB = "'Nunito', 'Segoe UI', Arial, sans-serif";
+
+function PinModal({ onSuccess, onClose }) {
+  const [pin, setPin] = useState("");
+  const [shake, setShake] = useState(false);
+  const handleSubmit = () => {
+    if (pin === PARENT_PIN) { onSuccess(); }
+    else { setShake(true); setPin(""); setTimeout(() => setShake(false), 600); }
+  };
+  return (
+    <div style={S.overlay}>
+      <div style={{ ...S.modal, animation: shake ? "shake 0.5s" : "none" }}>
+        <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:20, textAlign:"center" }}>🔐 Parent PIN</div>
+        <div style={{ display:"flex", justifyContent:"center", gap:14, marginBottom:20 }}>
+          {[0,1,2,3].map(i => (
+            <div key={i} style={{ width:20, height:20, borderRadius:"50%", background: pin.length>i ? (shake?"#EF4444":"#10B981") : "#334155", transition:"all 0.2s", transform: pin.length>i?"scale(1.2)":"scale(1)" }} />
+          ))}
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:14 }}>
+          {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((k,i) => (
+            <button key={i} style={{ ...S.numKey, opacity:k===""?0:1 }}
+              onClick={() => { if(k==="⌫") setPin(p=>p.slice(0,-1)); else if(k!==""&&pin.length<4) setPin(p=>p+k); }}>
+              {k}
+            </button>
+          ))}
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <button style={S.cancelBtn} onClick={onClose}>Cancel</button>
+          <button style={{ ...S.confirmBtn, opacity:pin.length<4?0.5:1 }} disabled={pin.length<4} onClick={handleSubmit}>Let's Go!</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AwardModal({ boy, onAward, onClose }) {
+  const [cat, setCat] = useState(null);
+  const [pts, setPts] = useState(1);
+  const [note, setNote] = useState("");
+  const boyObj = BOYS.find(b => b.id === boy);
+  return (
+    <div style={S.overlay}>
+      <div style={{ ...S.modal, maxWidth:380 }}>
+        <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:18, textAlign:"center" }}>
+          🏆 Award — {boyObj.name} {boyObj.avatar}
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={S.label}>Category</div>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            {CATEGORIES.map(c => (
+              <button key={c.id} onClick={() => setCat(c.id)}
+                style={{ padding:"9px 14px", borderRadius:12, border:`2px solid ${cat===c.id?c.color:"#334155"}`, cursor:"pointer", fontFamily:FH, fontSize:15, background:cat===c.id?c.color:"#0f172a", color:cat===c.id?"#fff":"#94a3b8", transition:"all 0.15s" }}>
+                {c.emoji} {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={S.label}>Points</div>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <button style={S.stepBtn} onClick={() => setPts(p=>Math.max(1,p-1))}>−</button>
+            <span style={{ fontSize:36, fontFamily:FH, color:"#f1f5f9", minWidth:44, textAlign:"center" }}>{pts}</span>
+            <button style={S.stepBtn} onClick={() => setPts(p=>Math.min(50,p+1))}>+</button>
+            <div style={{ display:"flex", gap:5, marginLeft:6 }}>
+              {[1,5,10,25].map(v => (
+                <button key={v} onClick={()=>setPts(v)}
+                  style={{ padding:"5px 10px", borderRadius:8, border:"none", cursor:"pointer", fontFamily:FH, fontSize:14, background:pts===v?"#1D4ED8":"#1e293b", color:pts===v?"#fff":"#64748b", transition:"all 0.15s" }}>
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ marginBottom:18 }}>
+          <div style={S.label}>Note (optional)</div>
+          <input style={S.input} placeholder="What awesome thing did they do?" value={note} onChange={e=>setNote(e.target.value)} />
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <button style={S.cancelBtn} onClick={onClose}>Nope</button>
+          <button style={{ ...S.confirmBtn, opacity:!cat?0.5:1 }} disabled={!cat} onClick={()=>onAward({cat,pts,note})}>
+            Award {pts} pts! 🎉
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RedeemModal({ boy, boyPts, onRedeem, onClose }) {
+  const [pts, setPts] = useState(1);
+  const [desc, setDesc] = useState("");
+  const boyObj = BOYS.find(b => b.id === boy);
+  return (
+    <div style={S.overlay}>
+      <div style={{ ...S.modal, maxWidth:360 }}>
+        <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:18, textAlign:"center" }}>
+          🎁 Redeem — {boyObj.name} {boyObj.avatar}
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={S.label}>Points to Spend</div>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <button style={S.stepBtn} onClick={()=>setPts(p=>Math.max(1,p-1))}>−</button>
+            <span style={{ fontSize:36, fontFamily:FH, color:"#f1f5f9", minWidth:44, textAlign:"center" }}>{pts}</span>
+            <button style={S.stepBtn} onClick={()=>setPts(p=>Math.min(boyPts,p+1))}>+</button>
+          </div>
+          <div style={{ fontSize:13, color:"#64748b", marginTop:5, fontFamily:FB }}>Balance: {boyPts} pts</div>
+        </div>
+        <div style={{ marginBottom:18 }}>
+          <div style={S.label}>What's the reward?</div>
+          <input style={S.input} placeholder="e.g. 30 min Xbox, ice cream, stay up late..." value={desc} onChange={e=>setDesc(e.target.value)} />
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <button style={S.cancelBtn} onClick={onClose}>Nope</button>
+          <button style={{ ...S.confirmBtn, background:"linear-gradient(135deg,#B91C1C,#EF4444)", boxShadow:"0 4px 12px rgba(239,68,68,0.3)", opacity:(!desc||pts>boyPts)?0.5:1 }}
+            disabled={!desc||pts>boyPts} onClick={()=>onRedeem({pts,desc})}>
+            Spend {pts} pts!
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryModal({ boy, history, onClose }) {
+  const boyObj = BOYS.find(b => b.id === boy);
+  return (
+    <div style={S.overlay}>
+      <div style={{ ...S.modal, maxWidth:420, maxHeight:"78vh", overflowY:"auto" }}>
+        <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:18, textAlign:"center" }}>
+          📜 {boyObj.name}'s History
+        </div>
+        {history.length===0 && (
+          <div style={{ color:"#64748b", textAlign:"center", padding:24, fontFamily:FB, fontSize:15 }}>
+            Nothing yet — go earn some points!
+          </div>
+        )}
+        {[...history].reverse().map((e,i) => (
+          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", marginBottom:8, borderRadius:12, background:e.type==="redeem"?"#2d1515":"#0f2a1a", borderLeft:`4px solid ${e.type==="redeem"?"#EF4444":"#10B981"}` }}>
+            <div>
+              <div style={{ fontFamily:FH, fontSize:15, color:"#e2e8f0" }}>
+                {e.type==="redeem"?"🎁 ":"⭐ "}{e.note||e.desc||e.cat}
+              </div>
+              <div style={{ fontSize:12, color:"#475569", marginTop:2, fontFamily:FB }}>{e.date}</div>
+            </div>
+            <div style={{ fontFamily:FH, fontSize:20, color:e.type==="redeem"?"#EF4444":"#10B981" }}>
+              {e.type==="redeem"?"-":"+"}{e.pts}
+            </div>
+          </div>
+        ))}
+        <button style={{ ...S.confirmBtn, width:"100%", marginTop:10 }} onClick={onClose}>Done!</button>
+      </div>
+    </div>
+  );
+}
+
+const defaultData = () => ({ totalPoints:0, history:[] });
+
+export default function App() {
+  const [data, setData] = useState({ orion:defaultData(), malachi:defaultData() });
+  const [pinModal, setPinModal] = useState(null);
+  const [awardModal, setAwardModal] = useState(null);
+  const [redeemModal, setRedeemModal] = useState(null);
+  const [historyModal, setHistoryModal] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
+
+  const handlePinSuccess = () => {
+    const { action, boyId } = pinModal;
+    setPinModal(null);
+    if (action==="award") setAwardModal(boyId);
+    if (action==="redeem") setRedeemModal(boyId);
+  };
+
+  const handleAward = (boyId, { cat, pts, note }) => {
+    const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    setData(prev => ({ ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints+pts, history:[...prev[boyId].history,{type:"earn",cat,pts,note,date:now}] }}));
+    setAwardModal(null);
+    showToast(`+${pts} pts for ${BOYS.find(b=>b.id===boyId).name}! 🎉`);
+  };
+
+  const handleRedeem = (boyId, { pts, desc }) => {
+    const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    setData(prev => ({ ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints-pts, history:[...prev[boyId].history,{type:"redeem",pts,desc,date:now}] }}));
+    setRedeemModal(null);
+    showToast(`${BOYS.find(b=>b.id===boyId).name} redeemed: ${desc} 🎁`);
+  };
 
   return (
     <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Boogaloo&family=Nunito:wght@600;700;800;900&display=swap');
+        @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
+        @keyframes twinkle { from{opacity:0.15} to{opacity:0.75} }
+        @keyframes popIn { from{transform:scale(0.8);opacity:0} to{transform:scale(1);opacity:1} }
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body { background:#0f172a; }
+        button { transition:transform 0.1s,opacity 0.1s; cursor:pointer; }
+        button:active { transform:scale(0.94) !important; }
+        ::-webkit-scrollbar { width:6px; }
+        ::-webkit-scrollbar-thumb { background:#334155; border-radius:3px; }
+      `}</style>
 
-      <div className="ticks"></div>
+      <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0f172a 0%,#1a3050 45%,#0f2027 100%)", fontFamily:FB, padding:"0 16px 48px", position:"relative", overflow:"hidden" }}>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {[...Array(30)].map((_,i) => (
+          <div key={i} style={{ position:"fixed", borderRadius:"50%", background:"#fff",
+            width:`${(i%3)*0.8+1}px`, height:`${(i%3)*0.8+1}px`,
+            top:`${(i*37)%100}%`, left:`${(i*23+7)%100}%`,
+            zIndex:0, animation:`twinkle ${2+(i%4)*0.7}s ease-in-out ${(i%3)*0.5}s infinite alternate` }} />
+        ))}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
+        <div style={{ textAlign:"center", padding:"36px 0 28px", position:"relative", zIndex:1 }}>
+          <div style={{ fontSize:"clamp(26px,5.5vw,42px)", fontFamily:FH, color:"#fff", letterSpacing:1, textShadow:"0 0 28px rgba(96,165,250,0.55), 0 3px 10px rgba(0,0,0,0.7)" }}>
+            🏅 Johnson Reward Tracker
+          </div>
+          <div style={{ fontSize:12, color:"#475569", fontWeight:800, marginTop:8, letterSpacing:5, textTransform:"uppercase", fontFamily:FB }}>
+            Earn · Compete · Win
+          </div>
+        </div>
+
+        <div style={{ display:"flex", gap:20, justifyContent:"center", flexWrap:"wrap", position:"relative", zIndex:1 }}>
+          {BOYS.map(boy => {
+            const bd = data[boy.id];
+            const catTotals = CATEGORIES.map(c => ({ ...c, total: bd.history.filter(h=>h.cat===c.id).reduce((s,h)=>s+h.pts,0) }));
+            return (
+              <div key={boy.id} style={{ width:"100%", maxWidth:340, borderRadius:24, overflow:"hidden", boxShadow:"0 16px 48px rgba(0,0,0,0.6)", border:"1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ background:`linear-gradient(140deg,${boy.grad[0]},${boy.grad[1]})`, padding:"28px 20px 22px", textAlign:"center", position:"relative" }}>
+                  <div style={{ fontSize:60, marginBottom:4, filter:"drop-shadow(0 4px 10px rgba(0,0,0,0.4))", lineHeight:1 }}>{boy.avatar}</div>
+                  <div style={{ fontFamily:FH, fontSize:34, color:"#fff", textShadow:"0 2px 8px rgba(0,0,0,0.4)", letterSpacing:0.5 }}>{boy.name}</div>
+                  <div style={{ fontFamily:FH, fontSize:72, color:"#fff", lineHeight:1.0, textShadow:"0 4px 20px rgba(0,0,0,0.45)", marginTop:4 }}>{bd.totalPoints}</div>
+                  <div style={{ fontFamily:FB, fontWeight:800, fontSize:11, color:"rgba(255,255,255,0.65)", letterSpacing:5, textTransform:"uppercase", marginTop:4 }}>Points</div>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, padding:"16px 16px 10px", background:"#1e293b" }}>
+                  {catTotals.map(c => (
+                    <div key={c.id} style={{ display:"flex", flexDirection:"column", alignItems:"center", padding:"12px 8px", borderRadius:14, background:"#0f172a", border:`2px solid ${c.color}28`, gap:3 }}>
+                      <span style={{ fontSize:22 }}>{c.emoji}</span>
+                      <span style={{ fontFamily:FH, fontSize:22, color:"#f1f5f9" }}>{c.total}</span>
+                      <span style={{ fontFamily:FB, fontWeight:700, fontSize:11, color:"#475569", textTransform:"uppercase", letterSpacing:1 }}>{c.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display:"flex", gap:8, padding:"10px 16px 20px", background:"#1e293b" }}>
+                  <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(16,185,129,0.4)" }}
+                    onClick={()=>setPinModal({action:"award",boyId:boy.id})}>+ Award</button>
+                  <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#B91C1C,#EF4444)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(239,68,68,0.4)", opacity:bd.totalPoints===0?0.38:1 }}
+                    disabled={bd.totalPoints===0} onClick={()=>setPinModal({action:"redeem",boyId:boy.id})}>🎁 Spend</button>
+                  <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#1D4ED8,#3B82F6)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(59,130,246,0.4)" }}
+                    onClick={()=>setHistoryModal(boy.id)}>📜 Log</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {pinModal && <PinModal onSuccess={handlePinSuccess} onClose={()=>setPinModal(null)} />}
+        {awardModal && <AwardModal boy={awardModal} onAward={opts=>handleAward(awardModal,opts)} onClose={()=>setAwardModal(null)} />}
+        {redeemModal && <RedeemModal boy={redeemModal} boyPts={data[redeemModal].totalPoints} onRedeem={opts=>handleRedeem(redeemModal,opts)} onClose={()=>setRedeemModal(null)} />}
+        {historyModal && <HistoryModal boy={historyModal} history={data[historyModal].history} onClose={()=>setHistoryModal(null)} />}
+
+        {toast && (
+          <div style={{ position:"fixed", bottom:32, left:"50%", transform:"translateX(-50%)", background:"#0f172a", border:"2px solid #3B82F6", color:"#f1f5f9", padding:"14px 28px", borderRadius:16, fontFamily:FH, fontSize:18, zIndex:200, boxShadow:"0 8px 30px rgba(59,130,246,0.45)", whiteSpace:"nowrap", animation:"popIn 0.2s ease" }}>
+            {toast}
+          </div>
+        )}
+      </div>
     </>
-  )
+  );
 }
 
-export default App
+const S = {
+  overlay: { position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100, backdropFilter:"blur(6px)" },
+  modal: { background:"#1e293b", borderRadius:24, padding:"28px 24px", width:"92%", maxWidth:320, boxShadow:"0 24px 60px rgba(0,0,0,0.6)", border:"1px solid rgba(255,255,255,0.07)" },
+  label: { fontSize:11, fontWeight:800, color:"#475569", marginBottom:8, textTransform:"uppercase", letterSpacing:2, fontFamily:"'Nunito','Segoe UI',Arial,sans-serif" },
+  numKey: { padding:"14px 0", borderRadius:12, border:"none", background:"#0f172a", fontSize:24, cursor:"pointer", color:"#f1f5f9", fontFamily:"'Boogaloo','Arial Black',sans-serif" },
+  stepBtn: { width:38, height:38, borderRadius:10, border:"none", background:"#0f172a", fontSize:22, fontWeight:700, cursor:"pointer", color:"#94a3b8", fontFamily:"'Nunito',sans-serif" },
+  input: { width:"100%", padding:"11px 14px", borderRadius:12, border:"2px solid #334155", background:"#0f172a", fontSize:15, fontFamily:"'Nunito','Segoe UI',Arial,sans-serif", fontWeight:600, outline:"none", color:"#f1f5f9" },
+  cancelBtn: { flex:1, padding:"12px 0", borderRadius:12, border:"2px solid #334155", background:"transparent", color:"#64748b", fontFamily:"'Boogaloo','Arial Black',sans-serif", fontSize:16 },
+  confirmBtn: { flex:2, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", fontFamily:"'Boogaloo','Arial Black',sans-serif", fontSize:16, boxShadow:"0 4px 12px rgba(16,185,129,0.3)" },
+};
