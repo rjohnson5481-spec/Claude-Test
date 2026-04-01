@@ -5,6 +5,8 @@
 
 'use strict';
 
+const VERSION = '1.6';
+
 // ── State ────────────────────────────────────────────────────
 const state = {
   selectedFile: null,
@@ -65,6 +67,9 @@ const dom = {
 
 // ── API Key — Remember on device ─────────────────────────────
 const STORAGE_KEY = 'te_extractor_apikey';
+
+// Stamp version into the footer
+document.getElementById('versionDisplay').textContent = `v${VERSION}`;
 
 (function initApiKeyMemory() {
   const saved = localStorage.getItem(STORAGE_KEY);
