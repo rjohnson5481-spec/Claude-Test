@@ -3,46 +3,27 @@
    Iron & Light Johnson Academy
    ============================================================ */
 
-const CACHE_NAME = 'te-extractor-v1.9';
+const CACHE_NAME = 'te-extractor-v2.0';
 
-// Core app shell — cached on install for offline use
-const APP_SHELL = [
-  '/Claude-Test/',
-  '/Claude-Test/index.html',
-  '/Claude-Test/style.css',
-  '/Claude-Test/app.js',
-  '/Claude-Test/manifest.json',
-  '/Claude-Test/icons/icon-192.svg',
-  '/Claude-Test/icons/icon-512.svg',
-];
-
-// ── Install: cache the app shell ────────────────────────────
+// ── Install: activate immediately, no pre-caching ────────────
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
+  self.skipWaiting();
 });
 
-// ── Activate: clear old caches ───────────────────────────────
+// ── Activate: clear every old cache, claim all clients ───────
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys
-          .filter(key => key !== CACHE_NAME)
-          .map(key => caches.delete(key))
-      )
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
   );
 });
 
-// ── Fetch: cache-first for app shell, network-only for external ──
+// ── Fetch: network-first, cache only as offline fallback ─────
 self.addEventListener('fetch', event => {
   const url = event.request.url;
 
-  // Never intercept: API calls, fonts, CDN libraries
+  // Never intercept: API calls, fonts, CDN libraries, external assets
   if (
     url.includes('anthropic.com') ||
     url.includes('fonts.googleapis.com') ||
@@ -53,27 +34,31 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Cache-first for same-origin requests
+  // Only handle same-origin GET requests
+  if (event.request.method !== 'GET' || !url.startsWith(self.location.origin)) {
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        // Cache valid same-origin GET responses
-        if (
-          response.ok &&
-          event.request.method === 'GET' &&
-          url.startsWith(self.location.origin)
-        ) {
+    // Always try network first — ensures updates are always received
+    fetch(event.request)
+      .then(response => {
+        // Store a fresh copy in cache for offline use
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
-      });
-    }).catch(() => {
-      // Offline fallback — return cached index.html for navigation
-      if (event.request.mode === 'navigate') {
-        return caches.match('/Claude-Test/index.html');
-      }
-    })
+      })
+      .catch(() => {
+        // Network failed — serve from cache (offline fallback)
+        return caches.match(event.request).then(cached => {
+          if (cached) return cached;
+          // Last resort: return index.html for navigation requests
+          if (event.request.mode === 'navigate') {
+            return caches.match('/Claude-Test/index.html');
+          }
+        });
+      })
   );
 });
