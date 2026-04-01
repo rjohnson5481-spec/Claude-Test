@@ -758,32 +758,89 @@ body {
    RESPONSIVE
    ============================================================ */
 
-@media (max-width: 768px) {
-  :root {
-    --sidebar-w: 220px;
-  }
-
+/* ── Tablet (≤ 900px) ── */
+@media (max-width: 900px) {
   .main-content {
-    padding: 24px 20px;
-  }
-
-  .card {
-    padding: 20px;
+    padding: 28px 28px;
+    max-width: 100%;
   }
 }
 
-@media (max-width: 600px) {
-  .sidebar {
-    width: 100%;
-    position: static;
-    height: auto;
+/* ── Small tablet / large phone (≤ 720px) ── */
+@media (max-width: 720px) {
+  :root { --sidebar-w: 200px; }
+
+  .main-content {
+    padding: 20px 18px;
   }
 
+  .card {
+    padding: 18px 20px;
+  }
+
+  .panel-title {
+    font-size: 22px;
+  }
+}
+
+/* ── Mobile (≤ 640px): sidebar becomes sticky top nav ── */
+@media (max-width: 640px) {
+  body {
+    flex-direction: column;
+  }
+
+  /* ── Sidebar → top nav bar ── */
+  .sidebar {
+    width: 100%;
+    position: sticky;
+    top: 0;
+    height: auto;
+    flex-direction: column;
+    z-index: 200;
+    /* thin drop shadow to separate from content */
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  }
+
+  .sidebar-brand {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: none;
+    text-align: left;
+  }
+
+  .sidebar-logo {
+    width: 34px;
+    height: 34px;
+    margin: 0;
+    flex-shrink: 0;
+    border-width: 2px;
+  }
+
+  .sidebar-school-name {
+    font-size: 12.5px;
+    line-height: 1.25;
+  }
+
+  .sidebar-tagline {
+    display: none;
+  }
+
+  /* Tab bar — horizontally scrollable, no scrollbar shown */
   .sidebar-nav {
     display: flex;
+    flex-direction: row;
     overflow-x: auto;
-    padding: 8px 12px;
+    padding: 0 10px 8px;
     gap: 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .sidebar-nav li {
@@ -793,26 +850,125 @@ body {
 
   .nav-btn {
     white-space: nowrap;
-    padding: 8px 12px;
+    padding: 6px 13px;
+    font-size: 13px;
+    border-radius: 20px;
+    gap: 6px;
   }
 
-  .sidebar-brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    text-align: left;
-    padding: 16px 16px;
+  .nav-icon {
+    width: 14px;
+    height: 14px;
   }
 
-  .sidebar-logo {
-    width: 44px;
-    height: 44px;
-    margin: 0;
-    flex-shrink: 0;
+  .log-badge {
+    font-size: 10px;
+    padding: 1px 5px;
   }
 
+  .sidebar-footer {
+    display: none;
+  }
+
+  /* ── Main content ── */
   .main-content {
     margin-left: 0;
-    padding: 20px 16px;
+    padding: 16px 14px;
+    max-width: 100%;
+    min-height: calc(100vh - 90px);
+  }
+
+  .panel-header {
+    margin-bottom: 16px;
+  }
+
+  .panel-title {
+    font-size: 20px;
+  }
+
+  .panel-subtitle {
+    font-size: 14px;
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: var(--radius);
+  }
+
+  /* ── Form ── */
+  .form-group {
+    margin-bottom: 18px;
+  }
+
+  .form-label {
+    font-size: 13px;
+  }
+
+  .form-hint {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+  }
+
+  /* ── File drop zone ── */
+  .file-drop-content {
+    padding: 20px 14px;
+  }
+
+  /* ── Split row: stack vertically ── */
+  .split-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .split-row .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ── Results actions: full-width buttons ── */
+  .results-actions {
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .results-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ── Preview iframe ── */
+  #previewFrame {
+    height: 420px;
+  }
+
+  /* ── Prompt text ── */
+  .prompt-text {
+    font-size: 12.5px;
+    padding: 16px;
+    max-height: 360px;
+  }
+
+  /* ── Log entries ── */
+  .log-entry {
+    padding: 14px;
+  }
+
+  .log-entry-actions {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .log-entry-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ── Btn-lg full width ── */
+  .btn-lg {
+    font-size: 14px;
+    padding: 12px 20px;
   }
 }
+
