@@ -5,7 +5,7 @@
 
 'use strict';
 
-const VERSION = '2.0';
+const VERSION = '2.1';
 
 // ── State ────────────────────────────────────────────────────
 const state = {
@@ -658,6 +658,14 @@ dom.splitBtn.addEventListener('click', async () => {
     }
 
     const arrayBuffer = await readFileAsArrayBuffer(state.selectedFile);
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+      throw new Error('Could not read the file. Please try removing and re-adding it.');
+    }
+
+    if (!pdfLib.PDFDocument) {
+      throw new Error('PDF library did not load correctly. Please reload the page and try again.');
+    }
+
     const srcDoc      = await pdfLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
     const totalPages  = srcDoc.getPageCount();
 
@@ -735,19 +743,32 @@ async function getPdfPageCount(file) {
 
 /**
  * Lazy-load pdf-lib from CDN on first use.
+ * Tries jsDelivr first, falls back to unpkg.
  * Returns the PDFLib namespace object.
  */
 function loadPdfLib() {
-  if (window.PDFLib) return Promise.resolve(window.PDFLib);
-  return new Promise((resolve, reject) => {
-    const script  = document.createElement('script');
-    script.src    = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
-    script.onload = () => {
-      if (window.PDFLib) resolve(window.PDFLib);
-      else reject(new Error('pdf-lib loaded but PDFLib global not found.'));
-    };
-    script.onerror = () => reject(new Error('Could not load the PDF library. Check your internet connection.'));
-    document.head.appendChild(script);
+  if (window.PDFLib && window.PDFLib.PDFDocument) return Promise.resolve(window.PDFLib);
+  // Clear partial loads
+  delete window.PDFLib;
+
+  function tryLoad(src) {
+    return new Promise((resolve, reject) => {
+      const script   = document.createElement('script');
+      script.src     = src;
+      script.onload  = () => {
+        if (window.PDFLib && window.PDFLib.PDFDocument) resolve(window.PDFLib);
+        else reject(new Error('pdf-lib loaded but PDFDocument not found at ' + src));
+      };
+      script.onerror = () => reject(new Error('Failed to load ' + src));
+      document.head.appendChild(script);
+    });
+  }
+
+  const PRIMARY  = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+  const FALLBACK = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+
+  return tryLoad(PRIMARY).catch(() => tryLoad(FALLBACK)).catch(() => {
+    throw new Error('Could not load the PDF library. Check your internet connection and try again.');
   });
 }
 

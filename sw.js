@@ -3,7 +3,7 @@
    Iron & Light Johnson Academy
    ============================================================ */
 
-const CACHE_NAME = 'te-extractor-v2.0';
+const CACHE_NAME = 'te-extractor-v2.1';
 
 // ── Install: activate immediately, no pre-caching ────────────
 self.addEventListener('install', event => {
