@@ -57,7 +57,54 @@ const dom = {
   splitPageRange:   $('splitPageRange'),
   splitBtn:         $('splitBtn'),
   splitStatus:      $('splitStatus'),
+
+  // API key remember
+  rememberKey:      $('rememberKey'),
+  clearKeyBtn:      $('clearKeyBtn'),
 };
+
+// ── API Key — Remember on device ─────────────────────────────
+const STORAGE_KEY = 'te_extractor_apikey';
+
+(function initApiKeyMemory() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    dom.apiKey.value = saved;
+    dom.rememberKey.checked = true;
+    dom.clearKeyBtn.style.display = 'inline';
+    checkFormReady();
+  }
+})();
+
+dom.rememberKey.addEventListener('change', () => {
+  if (dom.rememberKey.checked) {
+    const key = dom.apiKey.value.trim();
+    if (key) {
+      localStorage.setItem(STORAGE_KEY, key);
+      dom.clearKeyBtn.style.display = 'inline';
+    }
+  } else {
+    localStorage.removeItem(STORAGE_KEY);
+    dom.clearKeyBtn.style.display = 'none';
+  }
+});
+
+dom.apiKey.addEventListener('input', () => {
+  if (dom.rememberKey.checked) {
+    const key = dom.apiKey.value.trim();
+    if (key) localStorage.setItem(STORAGE_KEY, key);
+    else localStorage.removeItem(STORAGE_KEY);
+  }
+  checkFormReady();
+});
+
+dom.clearKeyBtn.addEventListener('click', () => {
+  localStorage.removeItem(STORAGE_KEY);
+  dom.apiKey.value = '';
+  dom.rememberKey.checked = false;
+  dom.clearKeyBtn.style.display = 'none';
+  checkFormReady();
+});
 
 // ── Tab Navigation ───────────────────────────────────────────
 dom.navBtns.forEach(btn => {
@@ -192,7 +239,6 @@ function checkFormReady() {
 }
 
 dom.lessonNumbers.addEventListener('input', checkFormReady);
-dom.apiKey.addEventListener('input', checkFormReady);
 
 // ── Extract Form Submission ──────────────────────────────────
 dom.extractForm.addEventListener('submit', async e => {
@@ -596,7 +642,7 @@ dom.splitBtn.addEventListener('click', async () => {
     }
 
     const arrayBuffer = await state.selectedFile.arrayBuffer();
-    const srcDoc      = await pdfLib.PDFDocument.load(arrayBuffer);
+    const srcDoc      = await pdfLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
     const totalPages  = srcDoc.getPageCount();
 
     // Validate all page numbers

@@ -272,6 +272,50 @@ body {
   color: #aab8ae;
 }
 
+/* Remember API key row */
+.remember-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  gap: 12px;
+}
+
+.remember-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.remember-checkbox {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.clear-key-btn {
+  background: none;
+  border: none;
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--error-text);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  flex-shrink: 0;
+  opacity: .8;
+}
+
+.clear-key-btn:hover {
+  opacity: 1;
+}
+
 /* Input with toggle button */
 .input-with-toggle {
   position: relative;

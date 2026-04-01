@@ -96,7 +96,7 @@
           <div class="form-group">
             <label class="form-label" for="apiKey">
               Anthropic API Key
-              <span class="form-hint">Used only for this API call — never stored</span>
+              <span class="form-hint">Used only for API calls — not stored unless you opt in below</span>
             </label>
             <div class="input-with-toggle">
               <input
@@ -109,6 +109,13 @@
               <button type="button" class="toggle-visibility" id="toggleApiKey" aria-label="Show/hide API key">
                 <svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
+            </div>
+            <div class="remember-row">
+              <label class="remember-label">
+                <input type="checkbox" id="rememberKey" class="remember-checkbox" />
+                Remember key on this device
+              </label>
+              <button type="button" class="clear-key-btn" id="clearKeyBtn" style="display:none">Clear saved key</button>
             </div>
           </div>
 
