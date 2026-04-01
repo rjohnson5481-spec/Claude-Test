@@ -399,6 +399,91 @@ body {
 }
 
 /* ============================================================
+   PDF SPLITTER SECTION
+   ============================================================ */
+
+.split-section {
+  margin-top: 0;
+  border: 1.5px solid #fbbf24;
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: #fffbeb;
+  padding: 16px 18px 18px;
+}
+
+.file-drop-zone.too-big {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.split-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #92400e;
+  margin-bottom: 6px;
+}
+
+.split-header svg {
+  color: #d97706;
+  flex-shrink: 0;
+}
+
+.split-hint-text {
+  font-size: 13px;
+  color: #78350f;
+  font-style: italic;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.split-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.split-field {
+  flex: 1;
+}
+
+.split-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #78350f;
+  margin-bottom: 5px;
+}
+
+.split-row .btn {
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+.split-status {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.split-status.success {
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: #15803d;
+}
+
+.split-status.error {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
+}
+
+/* ============================================================
    BUTTONS
    ============================================================ */
 

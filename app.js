@@ -51,6 +51,12 @@ const dom = {
   // Session log
   logEmpty:         $('logEmpty'),
   logList:          $('logList'),
+
+  // PDF splitter
+  splitSection:     $('splitSection'),
+  splitPageRange:   $('splitPageRange'),
+  splitBtn:         $('splitBtn'),
+  splitStatus:      $('splitStatus'),
 };
 
 // ── Tab Navigation ───────────────────────────────────────────
@@ -119,13 +125,17 @@ function handleFileSelected(file) {
   dom.fileDropZone.classList.toggle('has-file', !tooBig);
   dom.fileDropZone.classList.toggle('too-big', tooBig);
 
+  // Show or hide the PDF splitter panel
+  $('splitSection').style.display = (tooBig && file.type === 'application/pdf') ? 'block' : 'none';
+  hideSplitStatus();
+
   dom.fileDropContent.innerHTML = tooBig ? `
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32" style="color:#dc2626">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32" style="color:#d97706">
       <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
     </svg>
-    <span class="file-drop-label" style="color:#dc2626">File too large — ${formatBytes(file.size)}</span>
-    <span class="file-drop-hint" style="color:#dc2626">Maximum is 20 MB. Extract fewer pages from the PDF and try again.</span>
-    <button type="button" class="btn btn-outline btn-sm" id="clearFileBtn" style="margin-top:8px;z-index:2;position:relative">
+    <span class="file-drop-label" style="color:#92400e">${escHtml(file.name)}</span>
+    <span class="file-drop-hint" style="color:#92400e">${formatBytes(file.size)} — too large for the API. Use the trimmer below.</span>
+    <button type="button" class="btn btn-outline btn-sm" id="clearFileBtn" style="margin-top:8px;z-index:2;position:relative;border-color:#fbbf24;color:#92400e">
       Remove file
     </button>
   ` : `
@@ -547,4 +557,129 @@ function sanitizeFilename(str) {
 function stripMarkdownFences(text) {
   // Remove ```html ... ``` or ``` ... ``` wrappers if present
   return text.replace(/^```(?:html)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+}
+
+// ── PDF Splitter ─────────────────────────────────────────────
+
+dom.splitBtn.addEventListener('click', async () => {
+  const rangeStr = dom.splitPageRange.value.trim();
+  if (!rangeStr) {
+    showSplitStatus('error', 'Please enter a page range first (e.g. 45-55).');
+    return;
+  }
+  if (!state.selectedFile) return;
+
+  setSplitting(true);
+  hideSplitStatus();
+
+  try {
+    const pdfLib  = await loadPdfLib();
+    const pages   = parsePageRange(rangeStr);
+
+    if (pages.length === 0) {
+      throw new Error('Could not parse that page range. Try a format like "45-55" or "45, 47, 50-60".');
+    }
+
+    const arrayBuffer = await state.selectedFile.arrayBuffer();
+    const srcDoc      = await pdfLib.PDFDocument.load(arrayBuffer);
+    const totalPages  = srcDoc.getPageCount();
+
+    // Validate all page numbers
+    const invalid = pages.filter(p => p < 1 || p > totalPages);
+    if (invalid.length > 0) {
+      throw new Error(`Page ${invalid[0]} is out of range. This PDF has ${totalPages} pages.`);
+    }
+
+    // Build new PDF with only the requested pages (pdf-lib uses 0-based index)
+    const newDoc       = await pdfLib.PDFDocument.create();
+    const zeroIndexed  = pages.map(p => p - 1);
+    const copiedPages  = await newDoc.copyPages(srcDoc, zeroIndexed);
+    copiedPages.forEach(p => newDoc.addPage(p));
+
+    const pdfBytes = await newDoc.save();
+    const baseName = state.selectedFile.name.replace(/\.pdf$/i, '');
+    const newName  = `${baseName}_pages_${rangeStr.replace(/\s/g, '')}.pdf`;
+    const newFile  = new File([pdfBytes], newName, { type: 'application/pdf' });
+
+    // Auto-load into uploader
+    handleFileSelected(newFile);
+
+    showSplitStatus('success',
+      `Done — ${pages.length} page${pages.length !== 1 ? 's' : ''} extracted (${formatBytes(newFile.size)}). Loaded automatically.`
+    );
+
+    // Clear the range input for next use
+    dom.splitPageRange.value = '';
+
+  } catch (err) {
+    showSplitStatus('error', err.message || 'Could not split the PDF. Please try again.');
+  } finally {
+    setSplitting(false);
+  }
+});
+
+// Allow Enter key in the page range input to trigger split
+dom.splitPageRange.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); dom.splitBtn.click(); }
+});
+
+function setSplitting(on) {
+  dom.splitBtn.disabled = on;
+  dom.splitBtn.querySelector('.split-btn-text').style.display    = on ? 'none' : '';
+  dom.splitBtn.querySelector('.split-btn-spinner').style.display = on ? 'inline-flex' : 'none';
+}
+
+function showSplitStatus(type, msg) {
+  dom.splitStatus.className = `split-status ${type}`;
+  dom.splitStatus.innerHTML = type === 'success'
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg> ${escHtml(msg)}`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ${escHtml(msg)}`;
+  dom.splitStatus.style.display = 'flex';
+}
+
+function hideSplitStatus() {
+  dom.splitStatus.style.display = 'none';
+}
+
+/**
+ * Lazy-load pdf-lib from CDN on first use.
+ * Returns the PDFLib namespace object.
+ */
+function loadPdfLib() {
+  if (window.PDFLib) return Promise.resolve(window.PDFLib);
+  return new Promise((resolve, reject) => {
+    const script  = document.createElement('script');
+    script.src    = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+    script.onload = () => {
+      if (window.PDFLib) resolve(window.PDFLib);
+      else reject(new Error('pdf-lib loaded but PDFLib global not found.'));
+    };
+    script.onerror = () => reject(new Error('Could not load the PDF library. Check your internet connection.'));
+    document.head.appendChild(script);
+  });
+}
+
+/**
+ * Parse a page range string into a sorted, deduplicated array of 1-based page numbers.
+ * Supports: "45-52", "45, 46, 47", "45-52, 60, 62-65"
+ */
+function parsePageRange(str) {
+  const pages = new Set();
+  const parts = str.split(/[,;]+/);
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    const rangeMatch = trimmed.match(/^(\d+)\s*[-–—]\s*(\d+)$/);
+    if (rangeMatch) {
+      const start = parseInt(rangeMatch[1], 10);
+      const end   = parseInt(rangeMatch[2], 10);
+      if (start <= end) {
+        for (let i = start; i <= end; i++) pages.add(i);
+      }
+    } else if (/^\d+$/.test(trimmed)) {
+      pages.add(parseInt(trimmed, 10));
+    }
+  }
+
+  return Array.from(pages).sort((a, b) => a - b);
 }
