@@ -325,6 +325,12 @@ body {
   background: #edf7f0;
 }
 
+.file-drop-zone.too-big {
+  border-style: solid;
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
 .file-input {
   position: absolute;
   inset: 0;

@@ -102,16 +102,33 @@ dom.fileDropZone.addEventListener('drop', e => {
   }
 });
 
+// 20 MB raw ≈ 27 MB base64 — well within Anthropic's 32 MB document limit
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
 function handleFileSelected(file) {
   state.selectedFile = file;
   if (!file) {
     resetFileDropZone();
+    hideError();
     checkFormReady();
     return;
   }
 
-  dom.fileDropZone.classList.add('has-file');
-  dom.fileDropContent.innerHTML = `
+  const tooBig = file.size > MAX_FILE_BYTES;
+
+  dom.fileDropZone.classList.toggle('has-file', !tooBig);
+  dom.fileDropZone.classList.toggle('too-big', tooBig);
+
+  dom.fileDropContent.innerHTML = tooBig ? `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32" style="color:#dc2626">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <span class="file-drop-label" style="color:#dc2626">File too large — ${formatBytes(file.size)}</span>
+    <span class="file-drop-hint" style="color:#dc2626">Maximum is 20 MB. Extract fewer pages from the PDF and try again.</span>
+    <button type="button" class="btn btn-outline btn-sm" id="clearFileBtn" style="margin-top:8px;z-index:2;position:relative">
+      Remove file
+    </button>
+  ` : `
     <div class="file-name-display">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
         ${file.type === 'application/pdf'
@@ -159,7 +176,8 @@ function checkFormReady() {
   const ready =
     dom.lessonNumbers.value.trim() !== '' &&
     dom.apiKey.value.trim() !== '' &&
-    state.selectedFile !== null;
+    state.selectedFile !== null &&
+    state.selectedFile.size <= MAX_FILE_BYTES;
   dom.extractBtn.disabled = !ready;
 }
 
