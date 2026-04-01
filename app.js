@@ -5,7 +5,7 @@
 
 'use strict';
 
-const VERSION = '2.2';
+const VERSION = '2.3';
 
 // ── State ────────────────────────────────────────────────────
 const state = {
@@ -379,6 +379,17 @@ Return ONLY the complete HTML. No markdown fences. No explanation.`;
     if (response.status === 401) throw new Error('Invalid API key. Please check your Anthropic API key and try again.');
     if (response.status === 429) throw new Error('Rate limit exceeded. Please wait a moment and try again.');
     if (response.status === 413) throw new Error('File is too large for the API. Please try a smaller file or a specific page range.');
+    if (errMsg.includes('context limit') || errMsg.includes('max_tokens')) {
+      // Show the trimmer so they can fix the range immediately
+      dom.splitSection.style.display = 'block';
+      dom.splitSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      throw new Error(
+        'Too many pages for the model\'s context window. ' +
+        'Trim the PDF to only the pages for your specific lessons — ' +
+        'aim for 6–8 pages per lesson (e.g. 3 lessons ≈ 20 pages). ' +
+        'Use the trimmer below to extract a tighter range.'
+      );
+    }
     throw new Error(`API error: ${errMsg}`);
   }
 
