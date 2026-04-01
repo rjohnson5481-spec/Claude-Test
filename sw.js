@@ -3,7 +3,7 @@
    Iron & Light Johnson Academy
    ============================================================ */
 
-const CACHE_NAME = 'te-extractor-v1.7';
+const CACHE_NAME = 'te-extractor-v1.8';
 
 // Core app shell — cached on install for offline use
 const APP_SHELL = [

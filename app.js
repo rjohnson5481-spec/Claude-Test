@@ -5,7 +5,7 @@
 
 'use strict';
 
-const VERSION = '1.7';
+const VERSION = '1.8';
 
 // ── State ────────────────────────────────────────────────────
 const state = {
@@ -391,6 +391,16 @@ Return ONLY the complete HTML. No markdown fences. No explanation.`;
 }
 
 // ── File Reader Helper ───────────────────────────────────────
+// FileReader-based ArrayBuffer reader — works on all Android Chrome versions
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read the file. Please try again.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -646,7 +656,7 @@ dom.splitBtn.addEventListener('click', async () => {
       throw new Error('Could not parse that page range. Try a format like "45-55" or "45, 47, 50-60".');
     }
 
-    const arrayBuffer = await state.selectedFile.arrayBuffer();
+    const arrayBuffer = await readFileAsArrayBuffer(state.selectedFile);
     const srcDoc      = await pdfLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
     const totalPages  = srcDoc.getPageCount();
 
@@ -714,7 +724,7 @@ function hideSplitStatus() {
 async function getPdfPageCount(file) {
   try {
     const pdfLib = await loadPdfLib();
-    const buf    = await file.arrayBuffer();
+    const buf    = await readFileAsArrayBuffer(file);
     const doc    = await pdfLib.PDFDocument.load(buf, { ignoreEncryption: true });
     return doc.getPageCount();
   } catch (_) {
