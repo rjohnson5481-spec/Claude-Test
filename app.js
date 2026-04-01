@@ -5,7 +5,7 @@
 
 'use strict';
 
-const VERSION = '1.8';
+const VERSION = '1.9';
 
 // ── State ────────────────────────────────────────────────────
 const state = {
@@ -68,8 +68,9 @@ const dom = {
 // ── API Key — Remember on device ─────────────────────────────
 const STORAGE_KEY = 'te_extractor_apikey';
 
-// Stamp version into the footer
+// Stamp version into both displays
 document.getElementById('versionDisplay').textContent = `v${VERSION}`;
+document.getElementById('sidebarVersion').textContent = `v${VERSION}`;
 
 (function initApiKeyMemory() {
   const saved = localStorage.getItem(STORAGE_KEY);

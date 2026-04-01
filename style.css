@@ -158,6 +158,14 @@ body {
   font-style: normal;
 }
 
+.sidebar-version {
+  font-size: 10px;
+  color: rgba(255,255,255,.35);
+  letter-spacing: 0.06em;
+  margin-top: 6px;
+  font-style: italic;
+}
+
 .sidebar-footer {
   padding: 16px 20px;
   border-top: 1px solid rgba(255,255,255,.1);
@@ -870,6 +878,12 @@ body {
 
   .sidebar-tagline {
     display: none;
+  }
+
+  .sidebar-version {
+    font-size: 10px;
+    margin-top: 2px;
+    color: rgba(255,255,255,.45);
   }
 
   /* Tab bar — horizontally scrollable, no scrollbar shown */
