@@ -177,7 +177,7 @@ function resetFileDropZone() {
       <line x1="12" y1="3" x2="12" y2="15"/>
     </svg>
     <span class="file-drop-label">Drop file here or <span class="file-drop-link">browse</span></span>
-    <span class="file-drop-hint">PDF up to 32 MB</span>
+    <span class="file-drop-hint">PDF · max 100 pages · max 20 MB</span>
   `;
 }
 
@@ -210,26 +210,41 @@ async function runExtraction() {
   const file    = state.selectedFile;
 
   try {
-    // 1. Read file as base64
+    // 1. For PDFs, check page count before wasting the API call
+    if (file.type === 'application/pdf') {
+      const pageCount = await getPdfPageCount(file);
+      if (pageCount > 100) {
+        // Show the trimmer panel so they can fix it immediately
+        dom.splitSection.style.display = 'block';
+        dom.splitSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        throw new Error(
+          `This PDF has ${pageCount} pages. The API allows a maximum of 100 pages. ` +
+          `Use the "Trim this PDF" panel below to extract only the lesson pages you need ` +
+          `(typically 4–8 pages per lesson).`
+        );
+      }
+    }
+
+    // 2. Read file as base64
     const { base64, mediaType } = await readFileAsBase64(file);
 
-    // 2. Call Claude API
+    // 3. Call Claude API
     const html = await callClaudeAPI({ apiKey, base64, mediaType, lessons, fileName: file.name });
 
-    // 3. Validate response
+    // 4. Validate response
     if (!html.includes('<!DOCTYPE') && !html.includes('<html')) {
       throw new Error('The response did not contain a valid HTML document. Please try again.');
     }
 
-    // 4. Store result
+    // 5. Store result
     const filename  = `lessons_${sanitizeFilename(lessons)}_questions.html`;
     const timestamp = new Date();
     state.lastResult = { html, lessons, filename, timestamp };
 
-    // 5. Log to session
+    // 6. Log to session
     addToSessionLog({ lessons, filename, timestamp, html, fileUsed: file.name });
 
-    // 6. Show results
+    // 7. Show results
     showResults(lessons);
 
   } catch (err) {
@@ -639,6 +654,21 @@ function showSplitStatus(type, msg) {
 
 function hideSplitStatus() {
   dom.splitStatus.style.display = 'none';
+}
+
+/**
+ * Return the page count of a PDF file.
+ * Returns 0 if the count cannot be determined (allow API to handle it).
+ */
+async function getPdfPageCount(file) {
+  try {
+    const pdfLib = await loadPdfLib();
+    const buf    = await file.arrayBuffer();
+    const doc    = await pdfLib.PDFDocument.load(buf, { ignoreEncryption: true });
+    return doc.getPageCount();
+  } catch (_) {
+    return 0;
+  }
 }
 
 /**
