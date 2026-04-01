@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background — full bleed for maskable -->
+  <rect width="512" height="512" fill="#2d5a3d"/>
+  <!-- Decorative ring -->
+  <circle cx="256" cy="256" r="192" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="8"/>
+  <!-- Open book -->
+  <g transform="translate(256,236)" fill="none" stroke="white" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0-96 C-48-101 -112-90 -144-64 L-144 101 C-112 75 -48 64 0 69 C48 64 112 75 144 101 L144-64 C112-90 48-101 0-96Z" stroke-width="10" fill="rgba(255,255,255,0.1)"/>
+    <line x1="0" y1="-96" x2="0" y2="69" stroke-width="10"/>
+  </g>
+  <!-- "IL" monogram -->
+  <text x="256" y="418" text-anchor="middle" fill="white" font-size="58" font-family="Georgia, serif" font-weight="bold" letter-spacing="10" opacity="0.9">IL</text>
+</svg>
