@@ -5,7 +5,7 @@
 
 'use strict';
 
-const VERSION = '2.1';
+const VERSION = '2.2';
 
 // ── State ────────────────────────────────────────────────────
 const state = {

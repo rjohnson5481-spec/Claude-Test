@@ -297,8 +297,29 @@ CONTEXT: BJU Press Reading 3A, 229-page TE, Lessons 1-37. Day on calendar = Less
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/Claude-Test/sw.js', { scope: '/Claude-Test/' })
-          .catch(() => {}); // fail silently — PWA is an enhancement
+        navigator.serviceWorker.register('/Claude-Test/sw.js', {
+          scope: '/Claude-Test/',
+          updateViaCache: 'none'   // always fetch sw.js fresh — never use HTTP cache
+        }).then(reg => {
+          // Check for a new version every time the page loads
+          reg.update();
+
+          // When a new SW finishes installing, tell it to activate immediately
+          reg.addEventListener('updatefound', () => {
+            const next = reg.installing;
+            next.addEventListener('statechange', () => {
+              if (next.state === 'installed') {
+                next.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        }).catch(() => {});
+
+        // When the new SW takes control, reload once to get fresh files
+        let reloading = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!reloading) { reloading = true; window.location.reload(); }
+        });
       });
     }
   </script>
