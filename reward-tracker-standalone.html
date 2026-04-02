@@ -16,13 +16,6 @@ const { useState } = React;
 
 const PARENT_PIN = "0650";
 
-const CATEGORIES = [
-  { id: "chores", label: "Chores", emoji: "🧹", color: "#F59E0B" },
-  { id: "behavior", label: "Behavior", emoji: "⭐", color: "#10B981" },
-  { id: "schoolwork", label: "Schoolwork", emoji: "📚", color: "#3B82F6" },
-  { id: "character", label: "Character", emoji: "💪", color: "#8B5CF6" },
-];
-
 const BOYS = [
   { id: "orion", name: "Orion", avatar: "🚀", grad: ["#1D4ED8", "#0EA5E9"] },
   { id: "malachi", name: "Malachi", avatar: "⚡", grad: ["#15803D", "#16A34A"] },
@@ -64,8 +57,7 @@ function PinModal({ onSuccess, onClose }) {
   );
 }
 
-function AwardModal({ boy, preselectedCat, onAward, onClose }) {
-  const [cat, setCat] = useState(preselectedCat || null);
+function AwardModal({ boy, onAward, onClose }) {
   const [pts, setPts] = useState(1);
   const [note, setNote] = useState("");
   const boyObj = BOYS.find(b => b.id === boy);
@@ -74,17 +66,6 @@ function AwardModal({ boy, preselectedCat, onAward, onClose }) {
       <div style={{ ...S.modal, maxWidth:380 }}>
         <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:18, textAlign:"center" }}>
           🏆 Award — {boyObj.name} {boyObj.avatar}
-        </div>
-        <div style={{ marginBottom:14 }}>
-          <div style={S.label}>Category</div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            {CATEGORIES.map(c => (
-              <button key={c.id} onClick={() => setCat(c.id)}
-                style={{ padding:"9px 14px", borderRadius:12, border:`2px solid ${cat===c.id?c.color:"#334155"}`, cursor:"pointer", fontFamily:FH, fontSize:15, background:cat===c.id?c.color:"#0f172a", color:cat===c.id?"#fff":"#94a3b8", transition:"all 0.15s" }}>
-                {c.emoji} {c.label}
-              </button>
-            ))}
-          </div>
         </div>
         <div style={{ marginBottom:14 }}>
           <div style={S.label}>Points</div>
@@ -108,7 +89,7 @@ function AwardModal({ boy, preselectedCat, onAward, onClose }) {
         </div>
         <div style={{ display:"flex", gap:10 }}>
           <button style={S.cancelBtn} onClick={onClose}>Nope</button>
-          <button style={{ ...S.confirmBtn, opacity:!cat?0.5:1 }} disabled={!cat} onClick={()=>onAward({cat,pts,note})}>
+          <button style={S.confirmBtn} onClick={()=>onAward({pts,note})}>
             Award {pts} pts! 🎉
           </button>
         </div>
@@ -169,7 +150,7 @@ function HistoryModal({ boy, history, onClose }) {
           <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", marginBottom:8, borderRadius:12, background:e.type==="redeem"?"#2d1515":"#0f2a1a", borderLeft:`4px solid ${e.type==="redeem"?"#EF4444":"#10B981"}` }}>
             <div>
               <div style={{ fontFamily:FH, fontSize:15, color:"#e2e8f0" }}>
-                {e.type==="redeem"?"🎁 ":"⭐ "}{e.note||e.desc||e.cat}
+                {e.type==="redeem"?"🎁 ":"⭐ "}{e.note||e.desc||"—"}
               </div>
               <div style={{ fontSize:12, color:"#475569", marginTop:2, fontFamily:FB }}>{e.date}</div>
             </div>
@@ -202,9 +183,9 @@ function App() {
     setRedeemModal(boyId);
   };
 
-  const handleAward = (boyId, { cat, pts, note }) => {
+  const handleAward = (boyId, { pts, note }) => {
     const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    setData(prev => ({ ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints+pts, history:[...prev[boyId].history,{type:"earn",cat,pts,note,date:now}] }}));
+    setData(prev => ({ ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints+pts, history:[...prev[boyId].history,{type:"earn",pts,note,date:now}] }}));
     setAwardModal(null);
     showToast(`+${pts} pts for ${BOYS.find(b=>b.id===boyId).name}! 🎉`);
   };
@@ -252,7 +233,6 @@ function App() {
         <div style={{ display:"flex", gap:20, justifyContent:"center", flexWrap:"wrap", position:"relative", zIndex:1 }}>
           {BOYS.map(boy => {
             const bd = data[boy.id];
-            const catTotals = CATEGORIES.map(c => ({ ...c, total: bd.history.filter(h=>h.cat===c.id).reduce((s,h)=>s+h.pts,0) }));
             return (
               <div key={boy.id} style={{ width:"100%", maxWidth:340, borderRadius:24, overflow:"hidden", boxShadow:"0 16px 48px rgba(0,0,0,0.6)", border:"1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ background:`linear-gradient(140deg,${boy.grad[0]},${boy.grad[1]})`, padding:"28px 20px 22px", textAlign:"center", position:"relative" }}>
@@ -266,21 +246,9 @@ function App() {
                     <span style={{ fontSize:10, color:"rgba(255,255,255,0.45)", fontFamily:FB, fontWeight:800, letterSpacing:2, textTransform:"uppercase" }}>cash</span>
                   </div>
                 </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, padding:"16px 16px 10px", background:"#1e293b" }}>
-                  {catTotals.map(c => (
-                    <button key={c.id} onClick={()=>setAwardModal({boyId:boy.id, catId:c.id})}
-                      style={{ display:"flex", flexDirection:"column", alignItems:"center", padding:"12px 8px", borderRadius:14, background:"#0f172a", border:`2px solid ${c.color}40`, gap:3, cursor:"pointer", transition:"border-color 0.15s" }}
-                      onMouseEnter={e=>e.currentTarget.style.borderColor=c.color}
-                      onMouseLeave={e=>e.currentTarget.style.borderColor=`${c.color}40`}>
-                      <span style={{ fontSize:22 }}>{c.emoji}</span>
-                      <span style={{ fontFamily:FH, fontSize:22, color:"#f1f5f9" }}>{c.total}</span>
-                      <span style={{ fontFamily:FB, fontWeight:700, fontSize:11, color:"#475569", textTransform:"uppercase", letterSpacing:1 }}>{c.label}</span>
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display:"flex", gap:8, padding:"10px 16px 20px", background:"#1e293b" }}>
+                <div style={{ display:"flex", gap:8, padding:"16px 16px 20px", background:"#1e293b" }}>
                   <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(16,185,129,0.4)" }}
-                    onClick={()=>setAwardModal({boyId:boy.id, catId:null})}>+ Award</button>
+                    onClick={()=>setAwardModal(boy.id)}>+ Award</button>
                   <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#B91C1C,#EF4444)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(239,68,68,0.4)", opacity:bd.totalPoints===0?0.38:1 }}
                     disabled={bd.totalPoints===0} onClick={()=>setPinModal({boyId:boy.id})}>🎁 Spend</button>
                   <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#1D4ED8,#3B82F6)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(59,130,246,0.4)" }}
@@ -292,7 +260,7 @@ function App() {
         </div>
 
         {pinModal && <PinModal onSuccess={handlePinSuccess} onClose={()=>setPinModal(null)} />}
-        {awardModal && <AwardModal boy={awardModal.boyId} preselectedCat={awardModal.catId} onAward={opts=>handleAward(awardModal.boyId,opts)} onClose={()=>setAwardModal(null)} />}
+        {awardModal && <AwardModal boy={awardModal} onAward={opts=>handleAward(awardModal,opts)} onClose={()=>setAwardModal(null)} />}
         {redeemModal && <RedeemModal boy={redeemModal} boyPts={data[redeemModal].totalPoints} onRedeem={opts=>handleRedeem(redeemModal,opts)} onClose={()=>setRedeemModal(null)} />}
         {historyModal && <HistoryModal boy={historyModal} history={data[historyModal].history} onClose={()=>setHistoryModal(null)} />}
 
