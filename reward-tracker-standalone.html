@@ -57,18 +57,43 @@ function PinModal({ onSuccess, onClose }) {
   );
 }
 
-const AWARD_EMOJIS = ["⭐","🔥","💯","🏆","💪","📚","🧹","🍳","🐕","🏃","🎨","🎵","🙏","👏","🚀","⚡","😊","🌟","🎯","🤝"];
+const AVATAR_EMOJIS = ["🚀","⚡","🔥","🦁","🐯","🐻","🦊","🐺","🦅","🐲","💀","🤖","👽","🧠","💎","🌊","⚔️","🎯","🏹","🌙","☀️","❄️","🌋","🎮","🎸","🥷","🧙","🦸","🤠","😈"];
+
+function AvatarModal({ boy, avatar, onSave, onClose }) {
+  const [pick, setPick] = useState(avatar);
+  return (
+    <div style={S.overlay}>
+      <div style={{ ...S.modal, maxWidth:340 }}>
+        <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:6, textAlign:"center" }}>
+          Change Avatar — {boy.name}
+        </div>
+        <div style={{ fontSize:52, textAlign:"center", marginBottom:16 }}>{pick}</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8, justifyContent:"center", marginBottom:20 }}>
+          {AVATAR_EMOJIS.map(e => (
+            <button key={e} onClick={()=>setPick(e)}
+              style={{ fontSize:26, padding:"6px 8px", borderRadius:10, border:`2px solid ${pick===e?"#3B82F6":"transparent"}`, background:pick===e?"#1D4ED833":"transparent", cursor:"pointer", lineHeight:1, transition:"all 0.12s" }}>
+              {e}
+            </button>
+          ))}
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <button style={S.cancelBtn} onClick={onClose}>Cancel</button>
+          <button style={S.confirmBtn} onClick={()=>onSave(pick)}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AwardModal({ boy, onAward, onClose }) {
   const [pts, setPts] = useState(1);
-  const [emoji, setEmoji] = useState(null);
   const [note, setNote] = useState("");
   const boyObj = BOYS.find(b => b.id === boy);
   return (
     <div style={S.overlay}>
       <div style={{ ...S.modal, maxWidth:380 }}>
         <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:18, textAlign:"center" }}>
-          🏆 Award — {boyObj.name} {boyObj.avatar}
+          🏆 Award — {boyObj.name}
         </div>
         <div style={{ marginBottom:14 }}>
           <div style={S.label}>Points</div>
@@ -86,24 +111,13 @@ function AwardModal({ boy, onAward, onClose }) {
             </div>
           </div>
         </div>
-        <div style={{ marginBottom:14 }}>
-          <div style={S.label}>Pick an emoji</div>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {AWARD_EMOJIS.map(e => (
-              <button key={e} onClick={()=>setEmoji(emoji===e?null:e)}
-                style={{ fontSize:22, padding:"5px 7px", borderRadius:10, border:`2px solid ${emoji===e?"#3B82F6":"transparent"}`, background:emoji===e?"#1D4ED833":"transparent", cursor:"pointer", lineHeight:1, transition:"all 0.12s" }}>
-                {e}
-              </button>
-            ))}
-          </div>
-        </div>
         <div style={{ marginBottom:18 }}>
           <div style={S.label}>Note (optional)</div>
           <input style={S.input} placeholder="What awesome thing did they do?" value={note} onChange={e=>setNote(e.target.value)} />
         </div>
         <div style={{ display:"flex", gap:10 }}>
           <button style={S.cancelBtn} onClick={onClose}>Nope</button>
-          <button style={S.confirmBtn} onClick={()=>onAward({pts, note: [emoji, note].filter(Boolean).join(" ")})}>
+          <button style={S.confirmBtn} onClick={()=>onAward({pts,note})}>
             Award {pts} pts! 🎉
           </button>
         </div>
@@ -183,6 +197,8 @@ const defaultData = () => ({ totalPoints:0, history:[] });
 
 function App() {
   const [data, setData] = useState({ orion:defaultData(), malachi:defaultData() });
+  const [avatars, setAvatars] = useState({ orion:"🚀", malachi:"⚡" });
+  const [avatarModal, setAvatarModal] = useState(null);
   const [pinModal, setPinModal] = useState(null);
   const [awardModal, setAwardModal] = useState(null);
   const [redeemModal, setRedeemModal] = useState(null);
@@ -190,6 +206,11 @@ function App() {
   const [toast, setToast] = useState(null);
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
+
+  const handleAvatarSave = (boyId, emoji) => {
+    setAvatars(prev => ({ ...prev, [boyId]: emoji }));
+    setAvatarModal(null);
+  };
 
   const handlePinSuccess = () => {
     const { boyId } = pinModal;
@@ -243,7 +264,7 @@ function App() {
             Earn · Compete · Win
           </div>
           <div style={{ display:"inline-block", marginTop:10, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:20, padding:"3px 12px", fontSize:11, color:"#475569", fontFamily:FB, fontWeight:800, letterSpacing:2 }}>
-            v1.6
+            v1.7
           </div>
         </div>
 
@@ -253,7 +274,7 @@ function App() {
             return (
               <div key={boy.id} style={{ width:"100%", maxWidth:340, borderRadius:24, overflow:"hidden", boxShadow:"0 16px 48px rgba(0,0,0,0.6)", border:"1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ background:`linear-gradient(140deg,${boy.grad[0]},${boy.grad[1]})`, padding:"28px 20px 22px", textAlign:"center", position:"relative" }}>
-                  <div style={{ fontSize:60, marginBottom:4, filter:"drop-shadow(0 4px 10px rgba(0,0,0,0.4))", lineHeight:1 }}>{boy.avatar}</div>
+                  <button onClick={()=>setAvatarModal(boy)} style={{ fontSize:60, marginBottom:4, filter:"drop-shadow(0 4px 10px rgba(0,0,0,0.4))", lineHeight:1, background:"none", border:"none", cursor:"pointer", padding:0, display:"block", margin:"0 auto 4px" }} title="Change avatar">{avatars[boy.id]}</button>
                   <div style={{ fontFamily:FH, fontSize:34, color:"#fff", textShadow:"0 2px 8px rgba(0,0,0,0.4)", letterSpacing:0.5 }}>{boy.name}</div>
                   <div style={{ fontFamily:FH, fontSize:72, color:"#fff", lineHeight:1.0, textShadow:"0 4px 20px rgba(0,0,0,0.45)", marginTop:4 }}>{bd.totalPoints}</div>
                   <div style={{ fontFamily:FB, fontWeight:800, fontSize:11, color:"rgba(255,255,255,0.65)", letterSpacing:5, textTransform:"uppercase", marginTop:4 }}>Points</div>
@@ -276,6 +297,7 @@ function App() {
           })}
         </div>
 
+        {avatarModal && <AvatarModal boy={avatarModal} avatar={avatars[avatarModal.id]} onSave={emoji=>handleAvatarSave(avatarModal.id,emoji)} onClose={()=>setAvatarModal(null)} />}
         {pinModal && <PinModal onSuccess={handlePinSuccess} onClose={()=>setPinModal(null)} />}
         {awardModal && <AwardModal boy={awardModal} onAward={opts=>handleAward(awardModal,opts)} onClose={()=>setAwardModal(null)} />}
         {redeemModal && <RedeemModal boy={redeemModal} boyPts={data[redeemModal].totalPoints} onRedeem={opts=>handleRedeem(redeemModal,opts)} onClose={()=>setRedeemModal(null)} />}
