@@ -57,8 +57,11 @@ function PinModal({ onSuccess, onClose }) {
   );
 }
 
+const AWARD_EMOJIS = ["⭐","🔥","💯","🏆","💪","📚","🧹","🍳","🐕","🏃","🎨","🎵","🙏","👏","🚀","⚡","😊","🌟","🎯","🤝"];
+
 function AwardModal({ boy, onAward, onClose }) {
   const [pts, setPts] = useState(1);
+  const [emoji, setEmoji] = useState(null);
   const [note, setNote] = useState("");
   const boyObj = BOYS.find(b => b.id === boy);
   return (
@@ -83,13 +86,24 @@ function AwardModal({ boy, onAward, onClose }) {
             </div>
           </div>
         </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={S.label}>Pick an emoji</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {AWARD_EMOJIS.map(e => (
+              <button key={e} onClick={()=>setEmoji(emoji===e?null:e)}
+                style={{ fontSize:22, padding:"5px 7px", borderRadius:10, border:`2px solid ${emoji===e?"#3B82F6":"transparent"}`, background:emoji===e?"#1D4ED833":"transparent", cursor:"pointer", lineHeight:1, transition:"all 0.12s" }}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
         <div style={{ marginBottom:18 }}>
           <div style={S.label}>Note (optional)</div>
           <input style={S.input} placeholder="What awesome thing did they do?" value={note} onChange={e=>setNote(e.target.value)} />
         </div>
         <div style={{ display:"flex", gap:10 }}>
           <button style={S.cancelBtn} onClick={onClose}>Nope</button>
-          <button style={S.confirmBtn} onClick={()=>onAward({pts,note})}>
+          <button style={S.confirmBtn} onClick={()=>onAward({pts, note: [emoji, note].filter(Boolean).join(" ")})}>
             Award {pts} pts! 🎉
           </button>
         </div>
