@@ -17,8 +17,8 @@ const { useState } = React;
 const PARENT_PIN = "0650";
 
 const BOYS = [
-  { id: "orion", name: "Orion", avatar: "🚀", grad: ["#1D4ED8", "#0EA5E9"] },
-  { id: "malachi", name: "Malachi", avatar: "⚡", grad: ["#15803D", "#16A34A"] },
+  { id: "orion", name: "Orion", avatar: "😎", grad: ["#1D4ED8", "#0EA5E9"] },
+  { id: "malachi", name: "Malachi", avatar: "🐼", grad: ["#15803D", "#16A34A"] },
 ];
 
 const FH = "'Boogaloo', 'Arial Black', sans-serif";
@@ -57,7 +57,7 @@ function PinModal({ onSuccess, onClose }) {
   );
 }
 
-const AVATAR_EMOJIS = ["🚀","⚡","🔥","🦁","🐯","🐻","🦊","🐺","🦅","🐲","💀","🤖","👽","🧠","💎","🌊","⚔️","🎯","🏹","🌙","☀️","❄️","🌋","🎮","🎸","🥷","🧙","🦸","🤠","😈"];
+const AVATAR_EMOJIS = ["😎","🐼","🚀","⚡","🔥","🦁","🐯","🐻","🦊","🐺","🦅","🐲","💀","🤖","👽","🧠","💎","🌊","⚔️","🎯","🏹","🌙","☀️","❄️","🌋","🎮","🎸","🥷","🧙","🦸","🤠","😈"];
 
 function AvatarModal({ boy, avatar, onSave, onClose }) {
   const [pick, setPick] = useState(avatar);
@@ -126,6 +126,49 @@ function AwardModal({ boy, onAward, onClose }) {
   );
 }
 
+function DeductModal({ boy, boyPts, onDeduct, onClose }) {
+  const [pts, setPts] = useState(1);
+  const [note, setNote] = useState("");
+  const boyObj = BOYS.find(b => b.id === boy);
+  return (
+    <div style={S.overlay}>
+      <div style={{ ...S.modal, maxWidth:380 }}>
+        <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:18, textAlign:"center" }}>
+          ➖ Deduct — {boyObj.name}
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={S.label}>Points to Remove</div>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <button style={S.stepBtn} onClick={() => setPts(p=>Math.max(1,p-1))}>−</button>
+            <span style={{ fontSize:36, fontFamily:FH, color:"#f1f5f9", minWidth:44, textAlign:"center" }}>{pts}</span>
+            <button style={S.stepBtn} onClick={() => setPts(p=>Math.min(boyPts,p+1))}>+</button>
+            <div style={{ display:"flex", gap:5, marginLeft:6 }}>
+              {[1,5,10,25].map(v => (
+                <button key={v} onClick={()=>setPts(Math.min(v,boyPts))}
+                  style={{ padding:"5px 10px", borderRadius:8, border:"none", cursor:"pointer", fontFamily:FH, fontSize:14, background:pts===v?"#D97706":"#1e293b", color:pts===v?"#fff":"#64748b", transition:"all 0.15s" }}>
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ fontSize:13, color:"#64748b", marginTop:5, fontFamily:FB }}>Balance: {boyPts} pts</div>
+        </div>
+        <div style={{ marginBottom:18 }}>
+          <div style={S.label}>Reason (optional)</div>
+          <input style={S.input} placeholder="Why are points being removed?" value={note} onChange={e=>setNote(e.target.value)} />
+        </div>
+        <div style={{ display:"flex", gap:10 }}>
+          <button style={S.cancelBtn} onClick={onClose}>Nope</button>
+          <button style={{ ...S.confirmBtn, background:"linear-gradient(135deg,#B45309,#F59E0B)", boxShadow:"0 4px 12px rgba(245,158,11,0.3)", opacity:pts>boyPts?0.5:1 }}
+            disabled={pts>boyPts} onClick={()=>onDeduct({pts,note})}>
+            Remove {pts} pts
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RedeemModal({ boy, boyPts, onRedeem, onClose }) {
   const [pts, setPts] = useState(1);
   const [desc, setDesc] = useState("");
@@ -174,19 +217,28 @@ function HistoryModal({ boy, history, onClose }) {
             Nothing yet — go earn some points!
           </div>
         )}
-        {[...history].reverse().map((e,i) => (
-          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", marginBottom:8, borderRadius:12, background:e.type==="redeem"?"#2d1515":"#0f2a1a", borderLeft:`4px solid ${e.type==="redeem"?"#EF4444":"#10B981"}` }}>
-            <div>
-              <div style={{ fontFamily:FH, fontSize:15, color:"#e2e8f0" }}>
-                {e.type==="redeem"?"🎁 ":"⭐ "}{e.note||e.desc||"—"}
+        {[...history].reverse().map((e,i) => {
+          const isRedeem = e.type==="redeem";
+          const isDeduct = e.type==="deduct";
+          const bg = isRedeem?"#2d1515":isDeduct?"#2d1f00":"#0f2a1a";
+          const border = isRedeem?"#EF4444":isDeduct?"#F59E0B":"#10B981";
+          const icon = isRedeem?"🎁 ":isDeduct?"➖ ":"⭐ ";
+          const color = isRedeem?"#EF4444":isDeduct?"#F59E0B":"#10B981";
+          const sign = isRedeem||isDeduct?"-":"+";
+          return (
+            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", marginBottom:8, borderRadius:12, background:bg, borderLeft:`4px solid ${border}` }}>
+              <div>
+                <div style={{ fontFamily:FH, fontSize:15, color:"#e2e8f0" }}>
+                  {icon}{e.note||e.desc||"—"}
+                </div>
+                <div style={{ fontSize:12, color:"#475569", marginTop:2, fontFamily:FB }}>{e.date}</div>
               </div>
-              <div style={{ fontSize:12, color:"#475569", marginTop:2, fontFamily:FB }}>{e.date}</div>
+              <div style={{ fontFamily:FH, fontSize:20, color }}>
+                {sign}{e.pts}
+              </div>
             </div>
-            <div style={{ fontFamily:FH, fontSize:20, color:e.type==="redeem"?"#EF4444":"#10B981" }}>
-              {e.type==="redeem"?"-":"+"}{e.pts}
-            </div>
-          </div>
-        ))}
+          );
+        })}
         <button style={{ ...S.confirmBtn, width:"100%", marginTop:10 }} onClick={onClose}>Done!</button>
       </div>
     </div>
@@ -197,10 +249,11 @@ const defaultData = () => ({ totalPoints:0, history:[] });
 
 function App() {
   const [data, setData] = useState({ orion:defaultData(), malachi:defaultData() });
-  const [avatars, setAvatars] = useState({ orion:"🚀", malachi:"⚡" });
+  const [avatars, setAvatars] = useState({ orion:"😎", malachi:"🐼" });
   const [avatarModal, setAvatarModal] = useState(null);
   const [pinModal, setPinModal] = useState(null);
   const [awardModal, setAwardModal] = useState(null);
+  const [deductModal, setDeductModal] = useState(null);
   const [redeemModal, setRedeemModal] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
   const [toast, setToast] = useState(null);
@@ -213,9 +266,17 @@ function App() {
   };
 
   const handlePinSuccess = () => {
-    const { boyId } = pinModal;
+    const { boyId, action } = pinModal;
     setPinModal(null);
-    setRedeemModal(boyId);
+    if (action === "deduct") setDeductModal(boyId);
+    else setRedeemModal(boyId);
+  };
+
+  const handleDeduct = (boyId, { pts, note }) => {
+    const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    setData(prev => ({ ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints-pts, history:[...prev[boyId].history,{type:"deduct",pts,note,date:now}] }}));
+    setDeductModal(null);
+    showToast(`−${pts} pts from ${BOYS.find(b=>b.id===boyId).name}`);
   };
 
   const handleAward = (boyId, { pts, note }) => {
@@ -264,7 +325,7 @@ function App() {
             Earn · Compete · Win
           </div>
           <div style={{ display:"inline-block", marginTop:10, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:20, padding:"3px 12px", fontSize:11, color:"#475569", fontFamily:FB, fontWeight:800, letterSpacing:2 }}>
-            v1.7
+            v1.8
           </div>
         </div>
 
@@ -284,12 +345,14 @@ function App() {
                     <span style={{ fontSize:10, color:"rgba(255,255,255,0.45)", fontFamily:FB, fontWeight:800, letterSpacing:2, textTransform:"uppercase" }}>cash</span>
                   </div>
                 </div>
-                <div style={{ display:"flex", gap:8, padding:"16px 16px 20px", background:"#1e293b" }}>
-                  <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(16,185,129,0.4)" }}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, padding:"16px 16px 20px", background:"#1e293b" }}>
+                  <button style={{ padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(16,185,129,0.4)" }}
                     onClick={()=>setAwardModal(boy.id)}>+ Award</button>
-                  <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#B91C1C,#EF4444)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(239,68,68,0.4)", opacity:bd.totalPoints===0?0.38:1 }}
-                    disabled={bd.totalPoints===0} onClick={()=>setPinModal({boyId:boy.id})}>🎁 Spend</button>
-                  <button style={{ flex:1, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#1D4ED8,#3B82F6)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(59,130,246,0.4)" }}
+                  <button style={{ padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#B45309,#F59E0B)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(245,158,11,0.4)", opacity:bd.totalPoints===0?0.38:1 }}
+                    disabled={bd.totalPoints===0} onClick={()=>setPinModal({boyId:boy.id,action:"deduct"})}>− Deduct</button>
+                  <button style={{ padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#B91C1C,#EF4444)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(239,68,68,0.4)", opacity:bd.totalPoints===0?0.38:1 }}
+                    disabled={bd.totalPoints===0} onClick={()=>setPinModal({boyId:boy.id,action:"spend"})}>🎁 Spend</button>
+                  <button style={{ padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#1D4ED8,#3B82F6)", color:"#fff", fontFamily:FH, fontSize:16, boxShadow:"0 4px 14px rgba(59,130,246,0.4)" }}
                     onClick={()=>setHistoryModal(boy.id)}>📜 Log</button>
                 </div>
               </div>
@@ -300,6 +363,7 @@ function App() {
         {avatarModal && <AvatarModal boy={avatarModal} avatar={avatars[avatarModal.id]} onSave={emoji=>handleAvatarSave(avatarModal.id,emoji)} onClose={()=>setAvatarModal(null)} />}
         {pinModal && <PinModal onSuccess={handlePinSuccess} onClose={()=>setPinModal(null)} />}
         {awardModal && <AwardModal boy={awardModal} onAward={opts=>handleAward(awardModal,opts)} onClose={()=>setAwardModal(null)} />}
+        {deductModal && <DeductModal boy={deductModal} boyPts={data[deductModal].totalPoints} onDeduct={opts=>handleDeduct(deductModal,opts)} onClose={()=>setDeductModal(null)} />}
         {redeemModal && <RedeemModal boy={redeemModal} boyPts={data[redeemModal].totalPoints} onRedeem={opts=>handleRedeem(redeemModal,opts)} onClose={()=>setRedeemModal(null)} />}
         {historyModal && <HistoryModal boy={historyModal} history={data[historyModal].history} onClose={()=>setHistoryModal(null)} />}
 
