@@ -1,0 +1,18 @@
+{
+  "name": "Johnson Reward Tracker",
+  "short_name": "Rewards",
+  "description": "Track and manage Johnson family reward points",
+  "start_url": "/Claude-Test/reward-tracker/",
+  "scope": "/Claude-Test/reward-tracker/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
