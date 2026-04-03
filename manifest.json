@@ -1,4 +1,5 @@
 {
+  "id": "/Claude-Test/",
   "name": "TE Question Extractor — Iron & Light Johnson Academy",
   "short_name": "TE Extractor",
   "description": "Extract teacher questions and vocabulary from BJU Press Teacher Edition PDFs.",
