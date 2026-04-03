@@ -283,11 +283,17 @@ function App() {
     const ref = db.ref("jrt");
     ref.on("value", snap => {
       const val = snap.val();
+      const normalize = (d) => ({
+        totalPoints: d?.totalPoints || 0,
+        history: !d?.history ? [] : Array.isArray(d.history) ? d.history : Object.values(d.history),
+      });
       if (val) {
-        setScores(val.scores  || defaultScores());
+        setScores({
+          orion:   normalize(val.scores?.orion),
+          malachi: normalize(val.scores?.malachi),
+        });
         setAvatars(val.avatars || DEFAULT_AVATARS);
       } else {
-        // First ever load — write defaults
         const s = defaultScores();
         fbSaveScores(s);
         fbSaveAvatars(DEFAULT_AVATARS);
