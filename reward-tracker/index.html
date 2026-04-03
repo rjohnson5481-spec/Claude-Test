@@ -247,9 +247,23 @@ function HistoryModal({ boy, history, onClose }) {
 
 const defaultData = () => ({ totalPoints:0, history:[] });
 
+const loadState = () => {
+  try {
+    const saved = localStorage.getItem("jrt_data");
+    return saved ? JSON.parse(saved) : { orion:defaultData(), malachi:defaultData() };
+  } catch { return { orion:defaultData(), malachi:defaultData() }; }
+};
+
+const loadAvatars = () => {
+  try {
+    const saved = localStorage.getItem("jrt_avatars");
+    return saved ? JSON.parse(saved) : { orion:"😎", malachi:"🐼" };
+  } catch { return { orion:"😎", malachi:"🐼" }; }
+};
+
 function App() {
-  const [data, setData] = useState({ orion:defaultData(), malachi:defaultData() });
-  const [avatars, setAvatars] = useState({ orion:"😎", malachi:"🐼" });
+  const [data, setData] = useState(loadState);
+  const [avatars, setAvatars] = useState(loadAvatars);
   const [avatarModal, setAvatarModal] = useState(null);
   const [pinModal, setPinModal] = useState(null);
   const [awardModal, setAwardModal] = useState(null);
@@ -260,8 +274,11 @@ function App() {
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
 
+  const saveData = (next) => { localStorage.setItem("jrt_data", JSON.stringify(next)); return next; };
+  const saveAvatars = (next) => { localStorage.setItem("jrt_avatars", JSON.stringify(next)); return next; };
+
   const handleAvatarSave = (boyId, emoji) => {
-    setAvatars(prev => ({ ...prev, [boyId]: emoji }));
+    setAvatars(prev => { const next = { ...prev, [boyId]: emoji }; saveAvatars(next); return next; });
     setAvatarModal(null);
   };
 
@@ -272,23 +289,23 @@ function App() {
     else setRedeemModal(boyId);
   };
 
-  const handleDeduct = (boyId, { pts, note }) => {
-    const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    setData(prev => ({ ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints-pts, history:[...prev[boyId].history,{type:"deduct",pts,note,date:now}] }}));
-    setDeductModal(null);
-    showToast(`−${pts} pts from ${BOYS.find(b=>b.id===boyId).name}`);
-  };
-
   const handleAward = (boyId, { pts, note }) => {
     const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    setData(prev => ({ ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints+pts, history:[...prev[boyId].history,{type:"earn",pts,note,date:now}] }}));
+    setData(prev => { const next = { ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints+pts, history:[...prev[boyId].history,{type:"earn",pts,note,date:now}] }}; saveData(next); return next; });
     setAwardModal(null);
     showToast(`+${pts} pts for ${BOYS.find(b=>b.id===boyId).name}! 🎉`);
   };
 
+  const handleDeduct = (boyId, { pts, note }) => {
+    const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    setData(prev => { const next = { ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints-pts, history:[...prev[boyId].history,{type:"deduct",pts,note,date:now}] }}; saveData(next); return next; });
+    setDeductModal(null);
+    showToast(`−${pts} pts from ${BOYS.find(b=>b.id===boyId).name}`);
+  };
+
   const handleRedeem = (boyId, { pts, desc }) => {
     const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    setData(prev => ({ ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints-pts, history:[...prev[boyId].history,{type:"redeem",pts,desc,date:now}] }}));
+    setData(prev => { const next = { ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints-pts, history:[...prev[boyId].history,{type:"redeem",pts,desc,date:now}] }}; saveData(next); return next; });
     setRedeemModal(null);
     showToast(`${BOYS.find(b=>b.id===boyId).name} redeemed: ${desc} 🎁`);
   };
@@ -325,7 +342,7 @@ function App() {
             Earn · Compete · Win
           </div>
           <div style={{ display:"inline-block", marginTop:10, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:20, padding:"3px 12px", fontSize:11, color:"#475569", fontFamily:FB, fontWeight:800, letterSpacing:2 }}>
-            v1.8
+            v1.9
           </div>
         </div>
 
