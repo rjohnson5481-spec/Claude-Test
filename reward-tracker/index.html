@@ -7,22 +7,46 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyCN3KzbnwwS1CwrDMIGujqPtAxmD9x7MPE",
+      authDomain: "johnson-rewards.firebaseapp.com",
+      databaseURL: "https://johnson-rewards-default-rtdb.firebaseio.com",
+      projectId: "johnson-rewards",
+      storageBucket: "johnson-rewards.firebasestorage.app",
+      messagingSenderId: "769637951071",
+      appId: "1:769637951071:web:8317e97f617dcc51385dea"
+    });
+    const db = firebase.database();
+  </script>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-const { useState } = React;
+const { useState, useEffect } = React;
 
 const PARENT_PIN = "0650";
 
 const BOYS = [
-  { id: "orion", name: "Orion", avatar: "😎", grad: ["#1D4ED8", "#0EA5E9"] },
-  { id: "malachi", name: "Malachi", avatar: "🐼", grad: ["#15803D", "#16A34A"] },
+  { id: "orion",   name: "Orion",   grad: ["#1D4ED8","#0EA5E9"] },
+  { id: "malachi", name: "Malachi", grad: ["#15803D","#16A34A"] },
 ];
 
 const FH = "'Boogaloo', 'Arial Black', sans-serif";
 const FB = "'Nunito', 'Segoe UI', Arial, sans-serif";
+
+const DEFAULT_AVATARS = { orion:"😎", malachi:"🐼" };
+const defaultData = () => ({ totalPoints:0, history:[] });
+const defaultScores = () => ({ orion:defaultData(), malachi:defaultData() });
+
+// ── Firebase helpers ────────────────────────────────────────────────────────
+const fbSaveScores  = (scores)  => db.ref("jrt/scores").set(scores);
+const fbSaveAvatars = (avatars) => db.ref("jrt/avatars").set(avatars);
+
+// ── Components ──────────────────────────────────────────────────────────────
 
 function PinModal({ onSuccess, onClose }) {
   const [pin, setPin] = useState("");
@@ -177,7 +201,7 @@ function RedeemModal({ boy, boyPts, onRedeem, onClose }) {
     <div style={S.overlay}>
       <div style={{ ...S.modal, maxWidth:360 }}>
         <div style={{ fontSize:22, fontFamily:FH, color:"#e2e8f0", marginBottom:18, textAlign:"center" }}>
-          🎁 Redeem — {boyObj.name} {boyObj.avatar}
+          🎁 Redeem — {boyObj.name}
         </div>
         <div style={{ marginBottom:14 }}>
           <div style={S.label}>Points to Spend</div>
@@ -220,22 +244,18 @@ function HistoryModal({ boy, history, onClose }) {
         {[...history].reverse().map((e,i) => {
           const isRedeem = e.type==="redeem";
           const isDeduct = e.type==="deduct";
-          const bg = isRedeem?"#2d1515":isDeduct?"#2d1f00":"#0f2a1a";
+          const bg     = isRedeem?"#2d1515":isDeduct?"#2d1f00":"#0f2a1a";
           const border = isRedeem?"#EF4444":isDeduct?"#F59E0B":"#10B981";
-          const icon = isRedeem?"🎁 ":isDeduct?"➖ ":"⭐ ";
-          const color = isRedeem?"#EF4444":isDeduct?"#F59E0B":"#10B981";
-          const sign = isRedeem||isDeduct?"-":"+";
+          const icon   = isRedeem?"🎁 ":isDeduct?"➖ ":"⭐ ";
+          const color  = isRedeem?"#EF4444":isDeduct?"#F59E0B":"#10B981";
+          const sign   = isRedeem||isDeduct?"-":"+";
           return (
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", marginBottom:8, borderRadius:12, background:bg, borderLeft:`4px solid ${border}` }}>
               <div>
-                <div style={{ fontFamily:FH, fontSize:15, color:"#e2e8f0" }}>
-                  {icon}{e.note||e.desc||"—"}
-                </div>
+                <div style={{ fontFamily:FH, fontSize:15, color:"#e2e8f0" }}>{icon}{e.note||e.desc||"—"}</div>
                 <div style={{ fontSize:12, color:"#475569", marginTop:2, fontFamily:FB }}>{e.date}</div>
               </div>
-              <div style={{ fontFamily:FH, fontSize:20, color }}>
-                {sign}{e.pts}
-              </div>
+              <div style={{ fontFamily:FH, fontSize:20, color }}>{sign}{e.pts}</div>
             </div>
           );
         })}
@@ -245,40 +265,44 @@ function HistoryModal({ boy, history, onClose }) {
   );
 }
 
-const defaultData = () => ({ totalPoints:0, history:[] });
-
-const loadState = () => {
-  try {
-    const saved = localStorage.getItem("jrt_data");
-    return saved ? JSON.parse(saved) : { orion:defaultData(), malachi:defaultData() };
-  } catch { return { orion:defaultData(), malachi:defaultData() }; }
-};
-
-const loadAvatars = () => {
-  try {
-    const saved = localStorage.getItem("jrt_avatars");
-    return saved ? JSON.parse(saved) : { orion:"😎", malachi:"🐼" };
-  } catch { return { orion:"😎", malachi:"🐼" }; }
-};
+// ── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
-  const [data, setData] = useState(loadState);
-  const [avatars, setAvatars] = useState(loadAvatars);
-  const [avatarModal, setAvatarModal] = useState(null);
-  const [pinModal, setPinModal] = useState(null);
-  const [awardModal, setAwardModal] = useState(null);
-  const [deductModal, setDeductModal] = useState(null);
-  const [redeemModal, setRedeemModal] = useState(null);
+  const [scores,  setScores]  = useState(null); // null = loading
+  const [avatars, setAvatars] = useState(DEFAULT_AVATARS);
+  const [avatarModal,  setAvatarModal]  = useState(null);
+  const [pinModal,     setPinModal]     = useState(null);
+  const [awardModal,   setAwardModal]   = useState(null);
+  const [deductModal,  setDeductModal]  = useState(null);
+  const [redeemModal,  setRedeemModal]  = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
   const [toast, setToast] = useState(null);
 
+  // Subscribe to Firebase on mount
+  useEffect(() => {
+    const ref = db.ref("jrt");
+    ref.on("value", snap => {
+      const val = snap.val();
+      if (val) {
+        setScores(val.scores  || defaultScores());
+        setAvatars(val.avatars || DEFAULT_AVATARS);
+      } else {
+        // First ever load — write defaults
+        const s = defaultScores();
+        fbSaveScores(s);
+        fbSaveAvatars(DEFAULT_AVATARS);
+        setScores(s);
+      }
+    });
+    return () => ref.off();
+  }, []);
+
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
 
-  const saveData = (next) => { localStorage.setItem("jrt_data", JSON.stringify(next)); return next; };
-  const saveAvatars = (next) => { localStorage.setItem("jrt_avatars", JSON.stringify(next)); return next; };
-
   const handleAvatarSave = (boyId, emoji) => {
-    setAvatars(prev => { const next = { ...prev, [boyId]: emoji }; saveAvatars(next); return next; });
+    const next = { ...avatars, [boyId]: emoji };
+    setAvatars(next);
+    fbSaveAvatars(next);
     setAvatarModal(null);
   };
 
@@ -291,32 +315,46 @@ function App() {
 
   const handleAward = (boyId, { pts, note }) => {
     const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    setData(prev => { const next = { ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints+pts, history:[...prev[boyId].history,{type:"earn",pts,note,date:now}] }}; saveData(next); return next; });
+    const next = { ...scores, [boyId]: { totalPoints:scores[boyId].totalPoints+pts, history:[...scores[boyId].history,{type:"earn",pts,note,date:now}] }};
+    setScores(next);
+    fbSaveScores(next);
     setAwardModal(null);
     showToast(`+${pts} pts for ${BOYS.find(b=>b.id===boyId).name}! 🎉`);
   };
 
   const handleDeduct = (boyId, { pts, note }) => {
     const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    setData(prev => { const next = { ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints-pts, history:[...prev[boyId].history,{type:"deduct",pts,note,date:now}] }}; saveData(next); return next; });
+    const next = { ...scores, [boyId]: { totalPoints:scores[boyId].totalPoints-pts, history:[...scores[boyId].history,{type:"deduct",pts,note,date:now}] }};
+    setScores(next);
+    fbSaveScores(next);
     setDeductModal(null);
     showToast(`−${pts} pts from ${BOYS.find(b=>b.id===boyId).name}`);
   };
 
   const handleRedeem = (boyId, { pts, desc }) => {
     const now = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    setData(prev => { const next = { ...prev, [boyId]: { totalPoints:prev[boyId].totalPoints-pts, history:[...prev[boyId].history,{type:"redeem",pts,desc,date:now}] }}; saveData(next); return next; });
+    const next = { ...scores, [boyId]: { totalPoints:scores[boyId].totalPoints-pts, history:[...scores[boyId].history,{type:"redeem",pts,desc,date:now}] }};
+    setScores(next);
+    fbSaveScores(next);
     setRedeemModal(null);
     showToast(`${BOYS.find(b=>b.id===boyId).name} redeemed: ${desc} 🎁`);
   };
+
+  // Loading screen while Firebase connects
+  if (!scores) return (
+    <div style={{ minHeight:"100vh", background:"#0f172a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }}>
+      <div style={{ fontSize:48 }}>🏅</div>
+      <div style={{ fontFamily:FH, fontSize:22, color:"#94a3b8", letterSpacing:1 }}>Loading…</div>
+    </div>
+  );
 
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Boogaloo&family=Nunito:wght@600;700;800;900&display=swap');
-        @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
-        @keyframes twinkle { from{opacity:0.15} to{opacity:0.75} }
-        @keyframes popIn { from{transform:scale(0.8);opacity:0} to{transform:scale(1);opacity:1} }
+        @keyframes shake  { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
+        @keyframes twinkle{ from{opacity:0.15} to{opacity:0.75} }
+        @keyframes popIn  { from{transform:scale(0.8);opacity:0} to{transform:scale(1);opacity:1} }
         * { box-sizing:border-box; margin:0; padding:0; }
         body { background:#0f172a; }
         button { transition:transform 0.1s,opacity 0.1s; cursor:pointer; }
@@ -342,13 +380,13 @@ function App() {
             Earn · Compete · Win
           </div>
           <div style={{ display:"inline-block", marginTop:10, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:20, padding:"3px 12px", fontSize:11, color:"#475569", fontFamily:FB, fontWeight:800, letterSpacing:2 }}>
-            v1.9
+            v2.0
           </div>
         </div>
 
         <div style={{ display:"flex", gap:20, justifyContent:"center", flexWrap:"wrap", position:"relative", zIndex:1 }}>
           {BOYS.map(boy => {
-            const bd = data[boy.id];
+            const bd = scores[boy.id];
             return (
               <div key={boy.id} style={{ width:"100%", maxWidth:340, borderRadius:24, overflow:"hidden", boxShadow:"0 16px 48px rgba(0,0,0,0.6)", border:"1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ background:`linear-gradient(140deg,${boy.grad[0]},${boy.grad[1]})`, padding:"28px 20px 22px", textAlign:"center", position:"relative" }}>
@@ -377,12 +415,12 @@ function App() {
           })}
         </div>
 
-        {avatarModal && <AvatarModal boy={avatarModal} avatar={avatars[avatarModal.id]} onSave={emoji=>handleAvatarSave(avatarModal.id,emoji)} onClose={()=>setAvatarModal(null)} />}
-        {pinModal && <PinModal onSuccess={handlePinSuccess} onClose={()=>setPinModal(null)} />}
-        {awardModal && <AwardModal boy={awardModal} onAward={opts=>handleAward(awardModal,opts)} onClose={()=>setAwardModal(null)} />}
-        {deductModal && <DeductModal boy={deductModal} boyPts={data[deductModal].totalPoints} onDeduct={opts=>handleDeduct(deductModal,opts)} onClose={()=>setDeductModal(null)} />}
-        {redeemModal && <RedeemModal boy={redeemModal} boyPts={data[redeemModal].totalPoints} onRedeem={opts=>handleRedeem(redeemModal,opts)} onClose={()=>setRedeemModal(null)} />}
-        {historyModal && <HistoryModal boy={historyModal} history={data[historyModal].history} onClose={()=>setHistoryModal(null)} />}
+        {avatarModal  && <AvatarModal  boy={avatarModal} avatar={avatars[avatarModal.id]} onSave={emoji=>handleAvatarSave(avatarModal.id,emoji)} onClose={()=>setAvatarModal(null)} />}
+        {pinModal     && <PinModal     onSuccess={handlePinSuccess} onClose={()=>setPinModal(null)} />}
+        {awardModal   && <AwardModal   boy={awardModal}  onAward={opts=>handleAward(awardModal,opts)}   onClose={()=>setAwardModal(null)} />}
+        {deductModal  && <DeductModal  boy={deductModal} boyPts={scores[deductModal].totalPoints}  onDeduct={opts=>handleDeduct(deductModal,opts)}   onClose={()=>setDeductModal(null)} />}
+        {redeemModal  && <RedeemModal  boy={redeemModal} boyPts={scores[redeemModal].totalPoints}  onRedeem={opts=>handleRedeem(redeemModal,opts)}   onClose={()=>setRedeemModal(null)} />}
+        {historyModal && <HistoryModal boy={historyModal} history={scores[historyModal].history}  onClose={()=>setHistoryModal(null)} />}
 
         {toast && (
           <div style={{ position:"fixed", bottom:32, left:"50%", transform:"translateX(-50%)", background:"#0f172a", border:"2px solid #3B82F6", color:"#f1f5f9", padding:"14px 28px", borderRadius:16, fontFamily:FH, fontSize:18, zIndex:200, boxShadow:"0 8px 30px rgba(59,130,246,0.45)", whiteSpace:"nowrap", animation:"popIn 0.2s ease" }}>
@@ -395,13 +433,13 @@ function App() {
 }
 
 const S = {
-  overlay: { position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100, backdropFilter:"blur(6px)" },
-  modal: { background:"#1e293b", borderRadius:24, padding:"28px 24px", width:"92%", maxWidth:320, boxShadow:"0 24px 60px rgba(0,0,0,0.6)", border:"1px solid rgba(255,255,255,0.07)" },
-  label: { fontSize:11, fontWeight:800, color:"#475569", marginBottom:8, textTransform:"uppercase", letterSpacing:2, fontFamily:"'Nunito','Segoe UI',Arial,sans-serif" },
-  numKey: { padding:"14px 0", borderRadius:12, border:"none", background:"#0f172a", fontSize:24, cursor:"pointer", color:"#f1f5f9", fontFamily:"'Boogaloo','Arial Black',sans-serif" },
-  stepBtn: { width:38, height:38, borderRadius:10, border:"none", background:"#0f172a", fontSize:22, fontWeight:700, cursor:"pointer", color:"#94a3b8", fontFamily:"'Nunito',sans-serif" },
-  input: { width:"100%", padding:"11px 14px", borderRadius:12, border:"2px solid #334155", background:"#0f172a", fontSize:15, fontFamily:"'Nunito','Segoe UI',Arial,sans-serif", fontWeight:600, outline:"none", color:"#f1f5f9" },
-  cancelBtn: { flex:1, padding:"12px 0", borderRadius:12, border:"2px solid #334155", background:"transparent", color:"#64748b", fontFamily:"'Boogaloo','Arial Black',sans-serif", fontSize:16 },
+  overlay:    { position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100, backdropFilter:"blur(6px)" },
+  modal:      { background:"#1e293b", borderRadius:24, padding:"28px 24px", width:"92%", maxWidth:320, boxShadow:"0 24px 60px rgba(0,0,0,0.6)", border:"1px solid rgba(255,255,255,0.07)" },
+  label:      { fontSize:11, fontWeight:800, color:"#475569", marginBottom:8, textTransform:"uppercase", letterSpacing:2, fontFamily:"'Nunito','Segoe UI',Arial,sans-serif" },
+  numKey:     { padding:"14px 0", borderRadius:12, border:"none", background:"#0f172a", fontSize:24, cursor:"pointer", color:"#f1f5f9", fontFamily:"'Boogaloo','Arial Black',sans-serif" },
+  stepBtn:    { width:38, height:38, borderRadius:10, border:"none", background:"#0f172a", fontSize:22, fontWeight:700, cursor:"pointer", color:"#94a3b8", fontFamily:"'Nunito',sans-serif" },
+  input:      { width:"100%", padding:"11px 14px", borderRadius:12, border:"2px solid #334155", background:"#0f172a", fontSize:15, fontFamily:"'Nunito','Segoe UI',Arial,sans-serif", fontWeight:600, outline:"none", color:"#f1f5f9" },
+  cancelBtn:  { flex:1, padding:"12px 0", borderRadius:12, border:"2px solid #334155", background:"transparent", color:"#64748b", fontFamily:"'Boogaloo','Arial Black',sans-serif", fontSize:16 },
   confirmBtn: { flex:2, padding:"12px 0", borderRadius:12, border:"none", background:"linear-gradient(135deg,#059669,#10B981)", color:"#fff", fontFamily:"'Boogaloo','Arial Black',sans-serif", fontSize:16, boxShadow:"0 4px 12px rgba(16,185,129,0.3)" },
 };
 
