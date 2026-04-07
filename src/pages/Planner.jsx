@@ -7,7 +7,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.4.2';
+const APP_VERSION = 'v2.0';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -125,17 +125,35 @@ function calcProjectedFinish(daysCompleted) {
 }
 
 
+function getWeekIdWithOffset(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset * 7);
+  return getWeekId(d);
+}
+
+function getWeekLabel(weekId) {
+  // Parse year-week and return "Week of Mon DD"
+  const [year, week] = weekId.split('-').map(Number);
+  const jan1 = new Date(year, 0, 1);
+  const dayOfWeek = jan1.getDay();
+  const firstMonday = new Date(jan1);
+  firstMonday.setDate(jan1.getDate() + ((8 - dayOfWeek) % 7 || 7) - 6);
+  const monday = new Date(firstMonday);
+  monday.setDate(firstMonday.getDate() + (week - 1) * 7);
+  return monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = `
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-.pw { font-family: 'Lora', Georgia, serif; background: #f4f2ee; color: #2c2c2c; min-height: 100vh; position: relative; }
+.pw { font-family: 'Lora', Georgia, serif; background: #f8f7f5; color: #1c1c1e; min-height: 100vh; position: relative; }
 .pw *, .pw *::before, .pw *::after { box-sizing: border-box; }
 
 /* Loading / Login */
-.p-fullscreen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f4f2ee; flex-direction: column; gap: 1.5rem; padding: 2rem; }
+.p-fullscreen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f8f7f5; flex-direction: column; gap: 1.5rem; padding: 2rem; }
 .p-login-card { background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.10); padding: 2.5rem 2rem; text-align: center; max-width: 380px; width: 100%; }
 .p-school-hero { font-family: 'Cinzel', Georgia, serif; font-size: 1.5rem; font-weight: 700; color: #1a3a2a; margin-bottom: 0.35rem; }
 .p-tagline-hero { color: #b4a064; font-size: 0.85rem; letter-spacing: 0.12em; margin-bottom: 1.75rem; }
@@ -149,7 +167,7 @@ const styles = `
 @keyframes pdot { 0%,80%,100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
 
 /* Buttons */
-.p-btn { display: inline-flex; align-items: center; gap: 0.4rem; border: none; border-radius: 8px; padding: 0.6rem 1.1rem; font-family: 'Lora', serif; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.15s; text-decoration: none; }
+.p-btn { display: inline-flex; align-items: center; gap: 0.4rem; border: none; border-radius: 10px; padding: 0.65rem 1.1rem; font-family: 'Lora', serif; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.15s; text-decoration: none; min-height: 44px; }
 .p-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .p-btn-primary { background: #1e2d4a; color: white; }
 .p-btn-primary:hover:not(:disabled) { background: #162139; }
@@ -170,11 +188,11 @@ const styles = `
 .p-google-btn:hover { background: #f8f8f8; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
 
 /* Top Bar */
-.p-topbar { position: sticky; top: 0; z-index: 100; background: white; border-bottom: 2px solid #1a3a2a; display: flex; align-items: center; padding: 0.65rem 1rem; gap: 0.75rem; }
-.p-topbar-menu-btn { background: none; border: none; cursor: pointer; color: #1a3a2a; font-size: 1.4rem; padding: 0.25rem; line-height: 1; }
+.p-topbar { position: sticky; top: 0; z-index: 100; background: white; border-bottom: 1px solid rgba(0,0,0,0.08); display: flex; align-items: center; padding: 0.5rem 1rem; gap: 0.75rem; min-height: 52px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.p-topbar-menu-btn { background: none; border: none; cursor: pointer; color: #1a3a2a; font-size: 1.4rem; padding: 0.4rem; line-height: 1; min-height: 44px; display: flex; align-items: center; }
 .p-topbar-center { flex: 1; text-align: center; }
-.p-topbar-name { font-family: 'Cinzel', serif; font-size: 1rem; font-weight: 700; color: #1a3a2a; line-height: 1.2; }
-.p-topbar-tagline { font-size: 0.65rem; color: #b4a064; letter-spacing: 0.1em; }
+.p-topbar-name { font-family: 'Cinzel', serif; font-size: 0.9rem; font-weight: 700; color: #1a3a2a; line-height: 1.2; }
+.p-topbar-tagline { font-size: 0.6rem; color: #b4a064; letter-spacing: 0.1em; }
 .p-compliance-mini { text-align: right; font-size: 0.7rem; color: #6b7280; min-width: 90px; }
 .p-compliance-mini .p-cm-row { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 2px; white-space: nowrap; }
 .p-cm-bar { height: 4px; background: #edecea; border-radius: 2px; flex: 1; overflow: hidden; }
@@ -187,7 +205,7 @@ const styles = `
 .p-tabnav button:hover:not(.active) { color: #2c2c2c; background: #f9f8f6; }
 
 /* Main content */
-.p-main { padding: 1rem; padding-bottom: 80px; max-width: 900px; margin: 0 auto; }
+.p-main { padding: 1rem; padding-bottom: 130px; max-width: 900px; margin: 0 auto; }
 
 /* Side Menu */
 .p-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200; }
@@ -209,9 +227,9 @@ const styles = `
 .p-subview-body { flex: 1; overflow-y: auto; padding: 1.25rem 1rem; }
 
 /* Cards */
-.p-card { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 1.25rem; margin-bottom: 1rem; border: 1px solid rgba(0,0,0,0.06); }
+.p-card { background: white; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); padding: 1.25rem; margin-bottom: 1rem; border: 1px solid rgba(0,0,0,0.05); }
 .p-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-.p-card-title { font-family: 'Cinzel', serif; font-size: 0.9rem; font-weight: 600; color: #1a3a2a; }
+.p-card-title { font-family: 'Cinzel', serif; font-size: 0.95rem; font-weight: 600; color: #1a3a2a; }
 
 /* Section headers */
 .p-section-title { font-family: 'Cinzel', serif; font-size: 0.95rem; font-weight: 600; color: #1a3a2a; margin-bottom: 0.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid rgba(0,0,0,0.08); }
@@ -222,15 +240,15 @@ const styles = `
 /* TODAY: lesson rows */
 .p-students-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
 @media (max-width: 640px) { .p-students-grid { grid-template-columns: 1fr; } }
-.p-student-card { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.06); overflow: hidden; }
-.p-student-header { background: #1a3a2a; color: white; padding: 0.65rem 1rem; font-family: 'Cinzel', serif; font-size: 0.875rem; font-weight: 600; }
-.p-student-body { padding: 0.75rem; }
-.p-lesson-row { margin-bottom: 0.75rem; }
-.p-lesson-check-row { display: flex; align-items: flex-start; gap: 0.6rem; }
-.p-lesson-check-row input[type=checkbox] { margin-top: 3px; width: 16px; height: 16px; accent-color: #1a3a2a; flex-shrink: 0; cursor: pointer; }
-.p-lesson-label { font-size: 0.85rem; line-height: 1.4; flex: 1; }
-.p-lesson-subject { font-weight: 600; color: #1e2d4a; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-.p-lesson-text { color: #2c2c2c; }
+.p-student-card { background: white; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.05); overflow: hidden; }
+.p-student-header { background: #1a3a2a; color: white; padding: 0.75rem 1rem; font-family: 'Cinzel', serif; font-size: 0.875rem; font-weight: 600; }
+.p-student-body { padding: 0.9rem; }
+.p-lesson-row { margin-bottom: 0.85rem; }
+.p-lesson-check-row { display: flex; align-items: flex-start; gap: 0.7rem; }
+.p-lesson-check-row input[type=checkbox] { margin-top: 3px; width: 18px; height: 18px; accent-color: #1a3a2a; flex-shrink: 0; cursor: pointer; }
+.p-lesson-label { font-size: 0.9rem; line-height: 1.5; flex: 1; }
+.p-lesson-subject { font-weight: 700; color: #1a3a2a; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; }
+.p-lesson-text { color: #1c1c1e; }
 .p-lesson-notes { width: 100%; margin-top: 0.4rem; padding: 0.4rem 0.6rem; font-family: 'Lora', serif; font-size: 0.8rem; border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; resize: vertical; min-height: 48px; background: #f9f8f6; outline: none; }
 .p-lesson-notes:focus { border-color: #1a3a2a; }
 .p-badge-carried { background: #b4a064; color: white; font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 999px; margin-left: 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -238,10 +256,10 @@ const styles = `
 
 /* Extra subjects */
 .p-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
-.p-chip { border: 1.5px solid #1a3a2a; color: #1a3a2a; background: transparent; border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.8rem; font-family: 'Lora', serif; cursor: pointer; transition: all 0.15s; font-weight: 600; }
+.p-chip { border: 1.5px solid #1a3a2a; color: #1a3a2a; background: transparent; border-radius: 999px; padding: 0.45rem 1rem; font-size: 0.85rem; font-family: 'Lora', serif; cursor: pointer; transition: all 0.15s; font-weight: 600; min-height: 38px; }
 .p-chip.active { background: #1a3a2a; color: white; }
 .p-chip:hover { background: #1a3a2a; color: white; }
-.p-extra-panel { background: #f4f2ee; border-radius: 8px; padding: 0.75rem; margin-top: 0.5rem; margin-bottom: 0.75rem; }
+.p-extra-panel { background: #f8f7f5; border-radius: 12px; padding: 0.9rem; margin-top: 0.5rem; margin-bottom: 0.75rem; }
 .p-extra-panel label { display: block; font-size: 0.75rem; font-weight: 600; color: #6b7280; margin-bottom: 0.2rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .p-extra-panel input, .p-extra-panel textarea { width: 100%; padding: 0.4rem 0.6rem; font-family: 'Lora', serif; font-size: 0.85rem; border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; background: white; outline: none; margin-bottom: 0.5rem; }
 .p-extra-panel textarea { min-height: 56px; resize: vertical; }
@@ -268,9 +286,11 @@ const styles = `
 .p-week-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
 .p-week-title { font-family: 'Cinzel', serif; font-size: 1.05rem; font-weight: 600; color: #1a3a2a; }
 .p-week-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.p-day-card { background: white; border-radius: 10px; margin-bottom: 0.75rem; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border: 1px solid rgba(0,0,0,0.07); overflow: hidden; }
-.p-day-card-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; cursor: pointer; user-select: none; }
-.p-day-card-header:hover { background: #f9f8f6; }
+.p-day-card { background: white; border-radius: 14px; margin-bottom: 0.75rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.05); overflow: hidden; border-left: 3px solid #e5e7eb; }
+.p-day-card.finalized { border-left-color: #1a3a2a; }
+.p-day-card.started { border-left-color: #b4933a; }
+.p-day-card-header { display: flex; align-items: center; justify-content: space-between; padding: 0.85rem 1rem; cursor: pointer; user-select: none; min-height: 52px; }
+.p-day-card-header:hover { background: #f9f8f7; }
 .p-day-name { font-family: 'Cinzel', serif; font-size: 0.875rem; font-weight: 600; color: #1a3a2a; }
 .p-day-status { font-size: 0.8rem; }
 .p-day-body { padding: 0.75rem 1rem; border-top: 1px solid rgba(0,0,0,0.07); }
@@ -580,6 +600,16 @@ export default function Planner() {
   // Confirmation dialog
   const [confirmDialog, setConfirmDialog] = useState(null);
 
+  // Week navigation
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [newWeekModal, setNewWeekModal] = useState(null);
+
+  // Inline editing
+  const [editingLesson, setEditingLesson] = useState(null);
+
+  // Photo import
+  const [pendingImages, setPendingImages] = useState([]);
+
   // Toast
   const [toast, setToast] = useState(null);
 
@@ -587,7 +617,7 @@ export default function Planner() {
   const fileInputRef = useRef(null);
 
   const todayId = getTodayId();
-  const weekId = getWeekId();
+  const weekId = getWeekIdWithOffset(weekOffset);
   const dayOfWeek = getDayOfWeek();
 
   const showToast = useCallback((msg) => setToast(msg), []);
@@ -647,9 +677,8 @@ export default function Planner() {
       if (snap.exists()) {
         setWeekSchedule(snap.data().days || {});
       } else {
-        // Seed schedule
-        await setDoc(doc(db, 'schedule', weekId), { days: SEED_SCHEDULE }, { merge: true });
-        setWeekSchedule(SEED_SCHEDULE);
+        setWeekSchedule(null);
+        setNewWeekModal(weekId);
       }
     }));
 
@@ -943,6 +972,10 @@ export default function Planner() {
     setChatInput('');
     setChatLoading(true);
 
+    // Capture and clear pending images
+    const imagesToSend = pendingImages.slice();
+    setPendingImages([]);
+
     try {
       const token = await user.getIdToken();
       await setDoc(doc(db, 'chatHistory', todayId), {
@@ -954,7 +987,18 @@ export default function Planner() {
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.text
       }));
-      context.push({ role: 'user', content: text });
+
+      // Build last message with optional images
+      const lastMsg = imagesToSend.length > 0
+        ? {
+            role: 'user',
+            content: [
+              ...imagesToSend.map(img => ({ type: 'image', source: { type: 'base64', media_type: img.type, data: img.base64 } })),
+              { type: 'text', text }
+            ]
+          }
+        : { role: 'user', content: text };
+      context.push(lastMsg);
 
       const resp = await fetch('/.netlify/functions/claude', {
         method: 'POST',
@@ -1432,75 +1476,96 @@ export default function Planner() {
         </div>
 
         {/* Extra Subjects */}
-        <div className="p-card">
-          <div className="p-card-title p-mb1">Extra Subjects</div>
-          <div className="p-chips">
-            {[
-              ['science','Science'],['history','History'],['bible','Bible / Faith'],
-              ['handwriting','Handwriting'],['grammar','English Grammar'],['spelling','Spelling'],
-              ...((appSettings.customSubjects || []).map(s => [s.toLowerCase().replace(/\s+/g,'_'), s]))
-            ].map(([key,label]) => (
-              <button
-                key={key}
-                className={`p-chip${extraSubjects[key] ? ' active' : ''}`}
-                onClick={() => { const v = !extraSubjects[key]; setExtraSubjects(p=>({...p,[key]:v})); saveExtraSubject(key,v); }}
-              >{label}</button>
-            ))}
-          </div>
-          {[
+        {(() => {
+          const addCustomSubject = async () => {
+            if (!newCustomSubject.trim()) return;
+            const updated = [...(appSettings.customSubjects || []), newCustomSubject.trim()];
+            setNewCustomSubject('');
+            setAppSettings(p => ({...p, customSubjects: updated}));
+            await setDoc(doc(db, 'settings', 'app'), { customSubjects: updated }, { merge: true });
+          };
+          const removeCustomSubject = async (name) => {
+            const updated = (appSettings.customSubjects || []).filter(s => s !== name);
+            setAppSettings(p => ({...p, customSubjects: updated}));
+            await setDoc(doc(db, 'settings', 'app'), { customSubjects: updated }, { merge: true });
+          };
+          const standardSubjects = [
             ['science','Science'],['history','History'],['bible','Bible / Faith'],
             ['handwriting','Handwriting'],['grammar','English Grammar'],['spelling','Spelling'],
-            ...((appSettings.customSubjects || []).map(s => [s.toLowerCase().replace(/\s+/g,'_'), s]))
-          ].map(([key,label]) => extraSubjects[key] && (
-            <div key={key} className="p-extra-panel">
-              <strong style={{fontSize:'0.8rem',color:'#1a3a2a'}}>{label}</strong>
-              <div style={{marginTop:'0.5rem'}}>
-                <label>Topic / Lesson</label>
-                <input
-                  type="text"
-                  value={extraDetails[key]?.topic || ''}
-                  placeholder="What was covered?"
-                  onChange={e => setExtraDetails(p=>({...p,[key]:{...p[key],topic:e.target.value}}))}
-                  onBlur={e => saveExtraDetail(key, 'topic', e.target.value)}
-                />
-                <label>Observations</label>
-                <textarea
-                  value={extraDetails[key]?.observations || ''}
-                  placeholder="Teacher notes..."
-                  onChange={e => setExtraDetails(p=>({...p,[key]:{...p[key],observations:e.target.value}}))}
-                  onBlur={e => saveExtraDetail(key, 'observations', e.target.value)}
-                />
+          ];
+          const customSubjects = (appSettings.customSubjects || []).map(s => [s.toLowerCase().replace(/\s+/g,'_'), s]);
+          const allSubjects = [...standardSubjects, ...customSubjects];
+          const activeSubjects = allSubjects.filter(([key]) => extraSubjects[key]);
+
+          return (
+            <div className="p-card">
+              <div className="p-card-title p-mb1">Extra Subjects</div>
+
+              {/* Chips row */}
+              <div className="p-chips" style={{marginBottom:'0.75rem'}}>
+                {allSubjects.map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={`p-chip${extraSubjects[key] ? ' active' : ''}`}
+                    onClick={() => { const v = !extraSubjects[key]; setExtraSubjects(p=>({...p,[key]:v})); saveExtraSubject(key,v); }}
+                    style={{position:'relative'}}
+                  >
+                    {label}
+                    {customSubjects.find(([k])=>k===key) && (
+                      <span
+                        style={{marginLeft:'0.35rem',opacity:0.7,fontSize:'0.7rem'}}
+                        onClick={e => { e.stopPropagation(); removeCustomSubject(label); }}
+                      >✕</span>
+                    )}
+                  </button>
+                ))}
+                {/* Add custom subject inline */}
+                {newCustomSubject !== null && (
+                  <div style={{display:'flex',gap:'0.4rem',alignItems:'center'}}>
+                    <input
+                      type="text"
+                      placeholder="New subject..."
+                      value={newCustomSubject}
+                      onChange={e => setNewCustomSubject(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') addCustomSubject(); if (e.key === 'Escape') setNewCustomSubject(''); }}
+                      autoFocus
+                      style={{width:'110px',padding:'0.3rem 0.5rem',fontFamily:'inherit',fontSize:'0.8rem',border:'1.5px solid #1a3a2a',borderRadius:'999px',outline:'none'}}
+                    />
+                    <button className="p-btn p-btn-green p-btn-sm" style={{borderRadius:'999px',padding:'0.3rem 0.7rem'}} onClick={addCustomSubject}>Add</button>
+                    <button className="p-btn p-btn-ghost p-btn-sm" style={{borderRadius:'999px',padding:'0.3rem 0.5rem'}} onClick={() => setNewCustomSubject('')}>✕</button>
+                  </div>
+                )}
+                <button
+                  className="p-chip"
+                  style={{background:'transparent',borderStyle:'dashed',color:'#6b7280'}}
+                  onClick={() => setNewCustomSubject(newCustomSubject === '' ? '' : '')}
+                >+ Add</button>
               </div>
+
+              {/* Active subject detail panels — all below chips */}
+              {activeSubjects.map(([key, label]) => (
+                <div key={key} className="p-extra-panel" style={{marginBottom:'0.5rem'}}>
+                  <strong style={{fontSize:'0.8rem',color:'#1a3a2a',display:'block',marginBottom:'0.4rem'}}>{label}</strong>
+                  <label>Topic / Lesson</label>
+                  <input
+                    type="text"
+                    value={extraDetails[key]?.topic || ''}
+                    placeholder="What was covered?"
+                    onChange={e => setExtraDetails(p=>({...p,[key]:{...p[key],topic:e.target.value}}))}
+                    onBlur={e => saveExtraDetail(key, 'topic', e.target.value)}
+                  />
+                  <label>Observations</label>
+                  <textarea
+                    value={extraDetails[key]?.observations || ''}
+                    placeholder="Teacher notes..."
+                    onChange={e => setExtraDetails(p=>({...p,[key]:{...p[key],observations:e.target.value}}))}
+                    onBlur={e => saveExtraDetail(key, 'observations', e.target.value)}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-          <div style={{display:'flex',gap:'0.5rem',marginTop:'0.5rem',alignItems:'center'}}>
-            <input
-              type="text"
-              placeholder="Add subject..."
-              value={newCustomSubject}
-              onChange={e => setNewCustomSubject(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && newCustomSubject.trim()) {
-                  const updated = [...(appSettings.customSubjects || []), newCustomSubject.trim()];
-                  setAppSettings(p => ({...p, customSubjects: updated}));
-                  setDoc(doc(db, 'settings', 'app'), { customSubjects: updated }, { merge: true });
-                  setNewCustomSubject('');
-                }
-              }}
-              style={{flex:1,padding:'0.35rem 0.6rem',fontFamily:'inherit',fontSize:'0.8rem',border:'1px solid rgba(0,0,0,0.12)',borderRadius:'6px',outline:'none'}}
-            />
-            <button
-              className="p-btn p-btn-outline p-btn-sm"
-              onClick={() => {
-                if (!newCustomSubject.trim()) return;
-                const updated = [...(appSettings.customSubjects || []), newCustomSubject.trim()];
-                setAppSettings(p => ({...p, customSubjects: updated}));
-                setDoc(doc(db, 'settings', 'app'), { customSubjects: updated }, { merge: true });
-                setNewCustomSubject('');
-              }}
-            >+ Add</button>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Day Notes + Hours */}
         <div className="p-card">
@@ -1577,7 +1642,6 @@ export default function Planner() {
 
 
   const renderWeekView = () => {
-    const weekLabel = `Week ${weekId}`;
     const planAheadRef = React.createRef();
 
     const toggleDay = (day) => setExpandedDays(p => ({ ...p, [day]: !p[day] }));
@@ -1597,12 +1661,41 @@ export default function Planner() {
     return (
       <div>
         <div className="p-week-header">
-          <div className="p-week-title">Week of {weekId}</div>
+          <div style={{display:'flex',alignItems:'center',gap:'0.75rem',flex:1}}>
+            <button className="p-btn p-btn-ghost p-btn-sm" onClick={() => setWeekOffset(p => p - 1)}>← Prev</button>
+            <div style={{flex:1,textAlign:'center'}}>
+              <div className="p-week-title">Week of {getWeekLabel(weekId)}</div>
+              {weekOffset !== 0 && <div style={{fontSize:'0.72rem',color:'#b4933a'}}>{weekOffset < 0 ? 'Past week' : 'Future week'}</div>}
+            </div>
+            <button className="p-btn p-btn-ghost p-btn-sm" disabled={weekOffset >= 8} onClick={() => setWeekOffset(p => p + 1)}>Next →</button>
+          </div>
           <div className="p-week-actions">
+            {weekOffset !== 0 && (
+              <button className="p-btn p-btn-outline p-btn-sm" onClick={() => setWeekOffset(0)}>Today's Week</button>
+            )}
             <button className="p-btn p-btn-outline p-btn-sm" onClick={() => { fileInputRef.current?.click(); setChatOpen(true); }}>
               Plan Ahead
             </button>
-            <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:'none'}} onChange={e => { if (e.target.files?.length) { setChatInput(`I'm sending ${e.target.files.length} schedule image(s). Please extract the lesson schedule data and present it in a table format: Day | Student | Subject | Lesson Detail`); setChatOpen(true); } }} />
+            <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:'none'}} onChange={async e => {
+              const files = Array.from(e.target.files || []);
+              if (!files.length) return;
+              const toBase64 = f => new Promise((res, rej) => {
+                if (f.size > 5 * 1024 * 1024) { rej(new Error('Image too large (max 5MB)')); return; }
+                const r = new FileReader();
+                r.onload = () => res({ base64: r.result.split(',')[1], type: f.type || 'image/jpeg', name: f.name });
+                r.onerror = rej;
+                r.readAsDataURL(f);
+              });
+              try {
+                const imgs = await Promise.all(files.slice(0, 3).map(toBase64));
+                setPendingImages(imgs);
+                setChatInput('Please extract the lesson schedule from this image and present it as a table: Day | Student | Subject | Lesson. Then offer to apply it using the [APPLY_DATA] format.');
+                setChatOpen(true);
+              } catch (err) {
+                showToast('Image error: ' + err.message);
+              }
+              e.target.value = '';
+            }} />
             <button className="p-btn p-btn-primary p-btn-sm" onClick={generateWeekReport} disabled={generatingReport}>
               {generatingReport ? 'Generating…' : 'Generate Report'}
             </button>
@@ -1619,15 +1712,29 @@ export default function Planner() {
           });
           const log = logKey ? allLogs[logKey] : null;
 
+          // Compute left border accent based on status
+          const borderAccent = status === 'finalized' ? '3px solid #1a3a2a' : status === 'started' ? '3px solid #f59e0b' : '3px solid #e5e7eb';
+
           return (
-            <div key={day} className="p-day-card">
+            <div key={day} className="p-day-card" style={{borderLeft: borderAccent}}>
               <div className="p-day-card-header" onClick={() => toggleDay(day)}>
-                <div>
+                <div style={{display:'flex',alignItems:'center',gap:'0.5rem',flex:1}}>
                   <span className="p-day-name">{day}</span>
-                  {status === 'finalized' && <span style={{marginLeft:'0.5rem',color:'#166534',fontSize:'0.8rem'}}>✓ Finalized</span>}
-                  {status === 'started' && <span style={{marginLeft:'0.5rem',color:'#92400e',fontSize:'0.8rem'}}>○ In Progress</span>}
+                  {status === 'finalized' && <span style={{color:'#166534',fontSize:'0.8rem'}}>✓ Finalized</span>}
+                  {status === 'started' && <span style={{color:'#92400e',fontSize:'0.8rem'}}>○ In Progress</span>}
                 </div>
-                <span style={{color:'#9ca3af',fontSize:'0.85rem'}}>{expanded ? '▲' : '▼'}</span>
+                <button
+                  className="p-btn p-btn-ghost p-btn-sm"
+                  style={{fontSize:'0.72rem',padding:'0.2rem 0.5rem'}}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const isNoSchool = dayData?.note === 'No School';
+                    await setDoc(doc(db, 'schedule', weekId), {
+                      days: { [day]: isNoSchool ? {} : { note: 'No School' } }
+                    }, { merge: true });
+                  }}
+                >{dayData?.note === 'No School' ? 'Undo No School' : 'No School'}</button>
+                <span style={{color:'#9ca3af',fontSize:'0.85rem',marginLeft:'0.5rem'}}>{expanded ? '▲' : '▼'}</span>
               </div>
               {expanded && (
                 <div className="p-day-body">
@@ -1652,7 +1759,29 @@ export default function Planner() {
                                 <div key={subject} className="p-day-lesson">
                                   <span className={done ? 'done' : 'undone'}>{done ? '✓' : '○'}</span>
                                   <span style={{fontSize:'0.75rem',fontWeight:600,textTransform:'uppercase',color:'#6b7280',minWidth:48}}>{subject}</span>
-                                  <span>{lesson}</span>
+                                  {editingLesson?.day === day && editingLesson?.student === student && editingLesson?.subject === subject ? (
+                                    <input
+                                      autoFocus
+                                      style={{flex:1,font:'inherit',fontSize:'0.83rem',border:'1px solid #1a3a2a',borderRadius:'5px',padding:'0.2rem 0.4rem',outline:'none'}}
+                                      value={editingLesson.value}
+                                      onChange={e => setEditingLesson(p => ({...p, value: e.target.value}))}
+                                      onBlur={async () => {
+                                        const path = `days.${day}.${student}.${subject}`;
+                                        await updateDoc(doc(db, 'schedule', weekId), { [path]: editingLesson.value }).catch(async () => {
+                                          await setDoc(doc(db, 'schedule', weekId), { days: {} }, { merge: true });
+                                          await updateDoc(doc(db, 'schedule', weekId), { [path]: editingLesson.value });
+                                        });
+                                        setEditingLesson(null);
+                                      }}
+                                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur(); }}
+                                    />
+                                  ) : (
+                                    <span
+                                      style={{flex:1,cursor:'text'}}
+                                      title="Tap to edit"
+                                      onClick={() => setEditingLesson({ day, student, subject, value: lesson })}
+                                    >{lesson}</span>
+                                  )}
                                   {carried && <span className="p-badge-carried">carried</span>}
                                 </div>
                               );
@@ -2135,6 +2264,36 @@ export default function Planner() {
   );
 
 
+  // ── New Week Modal ─────────────────────────────────────────────────────────────
+  const renderNewWeekModal = () => {
+    if (!newWeekModal) return null;
+    const wId = newWeekModal;
+    const prevWeekId = getWeekIdWithOffset(weekOffset - 1);
+    const handleFresh = async () => {
+      await setDoc(doc(db, 'schedule', wId), { days: SEED_SCHEDULE }, { merge: true });
+      setNewWeekModal(null);
+    };
+    const handleCopy = async () => {
+      const prev = await getDoc(doc(db, 'schedule', prevWeekId));
+      const days = prev.exists() ? prev.data().days || {} : SEED_SCHEDULE;
+      await setDoc(doc(db, 'schedule', wId), { days }, { merge: true });
+      setNewWeekModal(null);
+    };
+    return (
+      <div className="p-modal-overlay" onClick={() => setNewWeekModal(null)}>
+        <div className="p-modal" onClick={e => e.stopPropagation()} style={{maxWidth:360}}>
+          <h2>New Week</h2>
+          <p style={{fontSize:'0.875rem',color:'#6b7280',marginBottom:'1.25rem'}}>No schedule found for this week. How would you like to start?</p>
+          <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+            <button className="p-btn p-btn-primary p-btn-block" onClick={handleFresh}>Start Fresh (seed schedule)</button>
+            <button className="p-btn p-btn-outline p-btn-block" onClick={handleCopy}>Copy from Previous Week</button>
+            <button className="p-btn p-btn-ghost p-btn-block" onClick={() => setNewWeekModal(null)}>Leave Empty (plan via AI)</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ── Confirmation Dialog ────────────────────────────────────────────────────────
   const renderConfirmDialog = () => {
     if (!confirmDialog) return null;
@@ -2199,7 +2358,6 @@ export default function Planner() {
         <button className="p-topbar-menu-btn" onClick={() => setSideMenuOpen(true)} aria-label="Menu">☰</button>
         <div className="p-topbar-center">
           <div className="p-topbar-name">Iron &amp; Light Johnson Academy</div>
-          <div className="p-topbar-tagline">Faith · Knowledge · Strength <span style={{opacity:0.6,marginLeft:'0.3rem'}}>{APP_VERSION}</span></div>
         </div>
         <div className="p-compliance-mini">
           <div className="p-cm-row">
@@ -2212,13 +2370,6 @@ export default function Planner() {
           </div>
         </div>
       </header>
-
-      {/* Tab Nav */}
-      <nav className="p-tabnav">
-        {[['today','Today'],['week','Week'],['history','History']].map(([id,label]) => (
-          <button key={id} className={activeTab===id?'active':''} onClick={() => setActiveTab(id)}>{label}</button>
-        ))}
-      </nav>
 
       {/* Main Content */}
       <main className="p-main">
@@ -2275,7 +2426,7 @@ export default function Planner() {
 
       {/* AI Chat Drawer */}
       {!chatOpen && (
-        <div className="p-chat-tab" onClick={() => { setChatOpen(true); setChatUnread(false); }}>
+        <div className="p-chat-tab" style={{bottom:'calc(56px + env(safe-area-inset-bottom, 0px))'}} onClick={() => { setChatOpen(true); setChatUnread(false); }}>
           <span className="p-chat-tab-label">
             AI Assistant ✦
             {chatUnread && <span className="p-chat-unread-dot" />}
@@ -2316,6 +2467,16 @@ export default function Planner() {
             <div ref={chatEndRef} />
           </div>
           <div className="p-chat-input-row">
+            {pendingImages.length > 0 && (
+              <div style={{display:'flex',gap:'0.5rem',padding:'0.5rem 0.75rem',borderTop:'1px solid rgba(0,0,0,0.07)',flexWrap:'wrap'}}>
+                {pendingImages.map((img,i) => (
+                  <div key={i} style={{position:'relative'}}>
+                    <img src={`data:${img.type};base64,${img.base64}`} alt="" style={{width:56,height:56,objectFit:'cover',borderRadius:8,border:'1px solid rgba(0,0,0,0.12)'}} />
+                    <button onClick={() => setPendingImages(p => p.filter((_,j)=>j!==i))} style={{position:'absolute',top:-6,right:-6,background:'#dc2626',color:'white',border:'none',borderRadius:'50%',width:18,height:18,fontSize:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
             <textarea
               placeholder="Ask anything…"
               value={chatInput}
@@ -2328,8 +2489,32 @@ export default function Planner() {
         </div>
       )}
 
+      {/* Bottom Navigation */}
+      <nav style={{position:'fixed',bottom:0,left:0,right:0,zIndex:100,background:'white',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',padding:'0.5rem 0 env(safe-area-inset-bottom,0)'}}>
+        {[['today','TODAY','📅'],['week','WEEK','📋'],['history','HISTORY','📊']].map(([id,label,icon]) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            style={{
+              flex:1,border:'none',background:'none',padding:'0.4rem 0.5rem',
+              cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'0.1rem',
+              minHeight:44,fontFamily:"'Lora',serif",fontSize:'0.7rem',fontWeight:600,letterSpacing:'0.05em',
+              color: activeTab === id ? '#1a3a2a' : '#6b7280',
+              transition:'color 0.15s'
+            }}
+          >
+            <span style={{fontSize:'1.1rem'}}>{icon}</span>
+            <span>{label}</span>
+            {activeTab === id && <span style={{width:4,height:4,borderRadius:'50%',background:'#1a3a2a',marginTop:1}} />}
+          </button>
+        ))}
+      </nav>
+
       {/* Confirmation Dialog */}
       {renderConfirmDialog()}
+
+      {/* New Week Modal */}
+      {renderNewWeekModal()}
 
       {/* Toast */}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
