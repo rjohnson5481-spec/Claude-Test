@@ -7,7 +7,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.2';
+const APP_VERSION = 'v1.3';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -1037,8 +1037,8 @@ export default function Planner() {
       `School Year: August 25, 2025 – June 2026`,
       ``,
       `ATTENDANCE SUMMARY`,
-      `Total Days Completed: ${compliance.daysCompleted} of 175 required`,
-      `Total Hours Logged: ${compliance.hoursLogged?.toFixed(1)} of 1025 required`,
+      `Total Days Completed: ${totalDays} of 175 required`,
+      `Total Hours Logged: ${totalHours.toFixed(1)} of 1025 required`,
       ``,
       `STUDENTS`,
       `• ${appSettings.studentName1 || 'Orion'} — Reading 3 / Math 3`,
@@ -1409,8 +1409,8 @@ export default function Planner() {
   };
 
   const renderHistoryView = () => {
-    const days = compliance.daysCompleted || 0;
-    const hours = compliance.hoursLogged || 0;
+    const days = totalDays;
+    const hours = totalHours;
     const dayPct = Math.min(100, (days / 175) * 100);
     const hourPct = Math.min(100, (hours / 1025) * 100);
     const remaining = Math.max(0, 175 - days);
@@ -1746,10 +1746,10 @@ export default function Planner() {
     <div>
       <div className="p-card">
         <div className="p-card-title p-mb1">Current Compliance Status</div>
-        <p style={{fontSize:'0.875rem',marginBottom:'0.4rem'}}><strong>Days:</strong> {compliance.daysCompleted || 0} / 175</p>
-        <p style={{fontSize:'0.875rem',marginBottom:'0.4rem'}}><strong>Hours:</strong> {(compliance.hoursLogged || 0).toFixed(1)} / 1025</p>
-        <p style={{fontSize:'0.875rem',marginBottom:'0.4rem'}}><strong>Projected Finish:</strong> {calcProjectedFinish(compliance.daysCompleted || 0)}</p>
-        <p style={{fontSize:'0.875rem'}}><strong>Remaining Days:</strong> {Math.max(0, 175 - (compliance.daysCompleted || 0))}</p>
+        <p style={{fontSize:'0.875rem',marginBottom:'0.4rem'}}><strong>Days:</strong> {totalDays} / 175</p>
+        <p style={{fontSize:'0.875rem',marginBottom:'0.4rem'}}><strong>Hours:</strong> {totalHours.toFixed(1)} / 1025</p>
+        <p style={{fontSize:'0.875rem',marginBottom:'0.4rem'}}><strong>Projected Finish:</strong> {calcProjectedFinish(totalDays)}</p>
+        <p style={{fontSize:'0.875rem'}}><strong>Remaining Days:</strong> {Math.max(0, 175 - totalDays)}</p>
       </div>
       <button className="p-btn p-btn-primary" onClick={generateNDReport}>Generate Year-End Report PDF</button>
       <p style={{fontSize:'0.78rem',color:'#6b7280',marginTop:'0.75rem'}}>Generates a formatted PDF suitable for North Dakota homeschool reporting requirements.</p>
@@ -1784,6 +1784,41 @@ export default function Planner() {
       </div>
 
       <button className="p-btn p-btn-primary p-mb2" onClick={saveSettings}>Save Settings</button>
+
+      <hr className="p-divider" />
+
+      <div className="p-settings-section">
+        <h3>ND Compliance Starting Values</h3>
+        <p style={{fontSize:'0.8rem',color:'#6b7280',marginBottom:'0.75rem'}}>
+          If you were already partway through the school year when you started using this app,
+          enter your actual totals here so the compliance counter matches reality.
+        </p>
+        <div className="p-field-row">
+          <div className="p-field">
+            <label>Days Already Completed</label>
+            <input
+              type="number" min="0" max="175"
+              value={settingsForm.baseDays ?? compliance.baseDays ?? 0}
+              onChange={e => setSettingsForm(p => ({...p, baseDays: parseInt(e.target.value) || 0}))}
+            />
+          </div>
+          <div className="p-field">
+            <label>Hours Already Logged</label>
+            <input
+              type="number" min="0" step="0.5"
+              value={settingsForm.baseHours ?? compliance.baseHours ?? 0}
+              onChange={e => setSettingsForm(p => ({...p, baseHours: parseFloat(e.target.value) || 0}))}
+            />
+          </div>
+        </div>
+        <button className="p-btn p-btn-green p-btn-sm" onClick={async () => {
+          await setDoc(doc(db, 'compliance', 'nd'), {
+            baseDays: parseInt(settingsForm.baseDays) || 0,
+            baseHours: parseFloat(settingsForm.baseHours) || 0
+          }, { merge: true });
+          showToast('Compliance starting values saved.');
+        }}>Save Starting Values</button>
+      </div>
 
       <hr className="p-divider" />
 
@@ -1849,8 +1884,11 @@ export default function Planner() {
   if (authState === 'unauthenticated') return <LoginScreen />;
   if (authState === 'denied') return <AccessDeniedScreen user={currentUser} />;
 
-  const dayPct = Math.min(100, ((compliance.daysCompleted || 0) / 175) * 100);
-  const hourPct = Math.min(100, ((compliance.hoursLogged || 0) / 1025) * 100);
+  // Total = base offset (days done before app) + days finalized in app
+  const totalDays = (compliance.baseDays || 0) + (compliance.daysCompleted || 0);
+  const totalHours = (compliance.baseHours || 0) + (compliance.hoursLogged || 0);
+  const dayPct = Math.min(100, (totalDays / 175) * 100);
+  const hourPct = Math.min(100, (totalHours / 1025) * 100);
 
   const subviewTitles = { attendance:'Attendance Calendar', portfolios:'Student Portfolios', memorywork:'Memory Work', compliance:'ND Compliance', settings:'Settings' };
 
@@ -1867,11 +1905,11 @@ export default function Planner() {
         </div>
         <div className="p-compliance-mini">
           <div className="p-cm-row">
-            <span>{compliance.daysCompleted || 0}/175</span>
+            <span>{totalDays}/175</span>
             <div className="p-cm-bar"><div className="p-cm-fill" style={{width:`${dayPct}%`}} /></div>
           </div>
           <div className="p-cm-row">
-            <span>{(compliance.hoursLogged || 0).toFixed(0)}/1025h</span>
+            <span>{totalHours.toFixed(0)}/1025h</span>
             <div className="p-cm-bar"><div className="p-cm-fill" style={{width:`${hourPct}%`}} /></div>
           </div>
         </div>
