@@ -803,6 +803,10 @@ export default function Planner() {
     await setDoc(doc(db, 'logs', todayId), { extraDetails: { [key]: { [field]: value } } }, { merge: true });
   }, [todayId]);
 
+  const saveExtraDetailFull = useCallback(async (key, details) => {
+    await setDoc(doc(db, 'logs', todayId), { extraDetails: { [key]: details } }, { merge: true });
+  }, [todayId]);
+
   const startSchoolDay = async () => {
     await setDoc(doc(db, 'logs', todayId), { startedAt: new Date(), dayNotes: '', hoursLogged: appSettings.defaultHoursPerDay || 5.5 }, { merge: true });
     setSchoolDayStarted(true);
@@ -1543,26 +1547,65 @@ export default function Planner() {
               </div>
 
               {/* Active subject detail panels — all below chips */}
-              {activeSubjects.map(([key, label]) => (
-                <div key={key} className="p-extra-panel" style={{marginBottom:'0.5rem'}}>
-                  <strong style={{fontSize:'0.8rem',color:'#1a3a2a',display:'block',marginBottom:'0.4rem'}}>{label}</strong>
-                  <label>Topic / Lesson</label>
-                  <input
-                    type="text"
-                    value={extraDetails[key]?.topic || ''}
-                    placeholder="What was covered?"
-                    onChange={e => setExtraDetails(p=>({...p,[key]:{...p[key],topic:e.target.value}}))}
-                    onBlur={e => saveExtraDetail(key, 'topic', e.target.value)}
-                  />
-                  <label>Observations</label>
-                  <textarea
-                    value={extraDetails[key]?.observations || ''}
-                    placeholder="Teacher notes..."
-                    onChange={e => setExtraDetails(p=>({...p,[key]:{...p[key],observations:e.target.value}}))}
-                    onBlur={e => saveExtraDetail(key, 'observations', e.target.value)}
-                  />
-                </div>
-              ))}
+              {activeSubjects.map(([key, label]) => {
+                const det = extraDetails[key] || {};
+                const student = det.student || 'Both';
+                const s1 = appSettings.studentName1 || 'Orion';
+                const s2 = appSettings.studentName2 || 'Malachi';
+                const saveAll = async () => {
+                  await saveExtraDetailFull(key, det);
+                  showToast(`${label} saved.`);
+                };
+                return (
+                  <div key={key} className="p-extra-panel" style={{marginBottom:'0.75rem'}}>
+                    {/* Panel header: label + student selector */}
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.65rem',flexWrap:'wrap',gap:'0.5rem'}}>
+                      <strong style={{fontSize:'0.85rem',color:'#1a3a2a'}}>{label}</strong>
+                      <div style={{display:'flex',gap:'0.3rem'}}>
+                        {[s1, s2, 'Both'].map(opt => (
+                          <button
+                            key={opt}
+                            onClick={() => setExtraDetails(p=>({...p,[key]:{...p[key],student:opt}}))}
+                            style={{
+                              padding:'0.25rem 0.65rem',fontSize:'0.75rem',fontFamily:'inherit',
+                              fontWeight:600,borderRadius:'999px',cursor:'pointer',border:'1.5px solid',
+                              transition:'all 0.12s',
+                              background: student===opt ? '#1a3a2a' : 'transparent',
+                              color: student===opt ? 'white' : '#1a3a2a',
+                              borderColor:'#1a3a2a'
+                            }}
+                          >{opt}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Topic field */}
+                    <label>Topic / Lesson</label>
+                    <input
+                      type="text"
+                      value={det.topic || ''}
+                      placeholder="What was covered?"
+                      onChange={e => setExtraDetails(p=>({...p,[key]:{...p[key],topic:e.target.value}}))}
+                    />
+
+                    {/* Observations field */}
+                    <label>Observations</label>
+                    <textarea
+                      value={det.observations || ''}
+                      placeholder="Teacher notes..."
+                      onChange={e => setExtraDetails(p=>({...p,[key]:{...p[key],observations:e.target.value}}))}
+                    />
+
+                    {/* Save button */}
+                    <div style={{textAlign:'right',marginTop:'0.5rem'}}>
+                      <button
+                        className="p-btn p-btn-green p-btn-sm"
+                        onClick={saveAll}
+                      >Save {label}</button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           );
         })()}
