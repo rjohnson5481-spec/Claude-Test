@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { db, auth, googleProvider } from '../firebase.js';
 import {
-  doc, setDoc, onSnapshot, collection, query, orderBy,
+  doc, setDoc, updateDoc, onSnapshot, collection, query, orderBy,
   getDocs, deleteDoc, arrayUnion, getDoc
 } from 'firebase/firestore';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.3';
+const APP_VERSION = 'v1.4';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -522,6 +522,7 @@ export default function Planner() {
   const [extraDetails, setExtraDetails] = useState({});
   const [showFinalizePanel, setShowFinalizePanel] = useState(false);
   const [resolutions, setResolutions] = useState({});
+  const [viewDayOverride, setViewDayOverride] = useState(null);
 
   // Week view
   const [weekReport, setWeekReport] = useState('');
@@ -1019,13 +1020,20 @@ export default function Planner() {
   // ── Apply schedule from confirmation dialog ───────────────────────────────────
   const applyScheduleDialog = async () => {
     if (!confirmDialog) return;
-    for (const row of confirmDialog.rows.filter(r => r.checked)) {
-      await setDoc(doc(db, 'schedule', weekId), {
-        days: { [row.day]: { [row.student.toLowerCase()]: { [row.subject.toLowerCase()]: row.lesson } } }
-      }, { merge: true });
+    const checked = confirmDialog.rows.filter(r => r.checked);
+    for (const row of checked) {
+      // Use dot-notation paths so we don't overwrite sibling fields
+      const path = `days.${row.day}.${row.student.toLowerCase()}.${row.subject.toLowerCase()}`;
+      try {
+        await updateDoc(doc(db, 'schedule', weekId), { [path]: row.lesson });
+      } catch {
+        // Document may not exist yet — create it first then update
+        await setDoc(doc(db, 'schedule', weekId), { days: {} }, { merge: true });
+        await updateDoc(doc(db, 'schedule', weekId), { [path]: row.lesson });
+      }
     }
     setConfirmDialog(null);
-    showToast(`${confirmDialog.rows.filter(r => r.checked).length} lessons added to schedule.`);
+    showToast(`${checked.length} lesson${checked.length !== 1 ? 's' : ''} added to schedule.`);
   };
 
   // ── ND Year-End PDF ───────────────────────────────────────────────────────────
@@ -1062,14 +1070,91 @@ export default function Planner() {
 
 
   // ── Render helpers ────────────────────────────────────────────────────────────
-  const renderTodayView = () => {
-    const daySchedule = weekSchedule?.[dayOfWeek];
-    const isNoSchool = !daySchedule || daySchedule?.note === 'No School';
-    const isWeekend = ['Saturday', 'Sunday'].includes(dayOfWeek);
 
+  // Get calendar date for a DAYS_OF_WEEK entry within the current week
+  const getWeekDateFor = (dayName) => {
+    const today = new Date();
+    const todayDow = today.getDay(); // 0=Sun
+    const dows = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const targetDow = dows.indexOf(dayName);
+    const diff = targetDow - todayDow;
+    const d = new Date(today);
+    d.setDate(d.getDate() + diff);
+    return d;
+  };
+
+  const renderTodayView = () => {
+    const effectiveDay = viewDayOverride || dayOfWeek;
+    const isViewingToday = !viewDayOverride;
+    const effectiveDayIdx = DAYS_OF_WEEK.indexOf(effectiveDay);
+    const effectiveDate = isViewingToday ? new Date() : getWeekDateFor(effectiveDay);
+
+    const daySchedule = weekSchedule?.[effectiveDay];
+    const isNoSchool = !daySchedule || daySchedule?.note === 'No School';
+    const isWeekend = ['Saturday', 'Sunday'].includes(dayOfWeek) && isViewingToday;
+
+    // Day nav arrows (always shown in today view)
+    const dayNavRow = (
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.75rem'}}>
+        <button
+          className="p-btn p-btn-ghost p-btn-sm"
+          disabled={effectiveDayIdx <= 0}
+          onClick={() => setViewDayOverride(effectiveDayIdx === 1 ? null : DAYS_OF_WEEK[effectiveDayIdx - 1])}
+        >← Prev</button>
+        {!isViewingToday && (
+          <button className="p-btn p-btn-outline p-btn-sm" onClick={() => setViewDayOverride(null)}>
+            Today
+          </button>
+        )}
+        <button
+          className="p-btn p-btn-ghost p-btn-sm"
+          disabled={effectiveDayIdx >= DAYS_OF_WEEK.length - 1}
+          onClick={() => setViewDayOverride(DAYS_OF_WEEK[effectiveDayIdx + 1])}
+        >Next →</button>
+      </div>
+    );
+
+    // If viewing a future/past day (not today): read-only schedule preview
+    if (!isViewingToday) {
+      return (
+        <div>
+          {dayNavRow}
+          <div className="p-date-header">
+            <h2>{formatDateDisplay(effectiveDate)}</h2>
+            <div className="p-day-num" style={{color:'#b4a064'}}>Preview — not today</div>
+          </div>
+          {isNoSchool ? (
+            <div className="p-no-school-banner">
+              <strong>No School</strong>
+            </div>
+          ) : (
+            <div className="p-students-grid">
+              {['orion', 'malachi'].map(student => (
+                <div key={student} className="p-student-card">
+                  <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
+                  <div className="p-student-body">
+                    {['reading', 'math'].map(subject => (
+                      <div key={subject} className="p-lesson-row">
+                        <div className="p-lesson-subject">{subject}</div>
+                        <div className="p-lesson-text" style={{fontSize:'0.85rem',marginTop:'0.15rem',color:'#2c2c2c'}}>
+                          {daySchedule?.[student]?.[subject] || '—'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── Today view (actual today) ──────────────────────────────────────────────
     if (isWeekend || isNoSchool) {
       return (
         <div>
+          {dayNavRow}
           <div className="p-date-header">
             <h2>{formatDateDisplay()}</h2>
             <div className="p-day-num">School Day #{getSchoolDayNumber()}</div>
@@ -1087,6 +1172,7 @@ export default function Planner() {
       // Morning Mode
       return (
         <div>
+          {dayNavRow}
           <div className="p-date-header">
             <h2>{formatDateDisplay()}</h2>
             <div className="p-day-num">School Day #{getSchoolDayNumber()}</div>
@@ -1123,6 +1209,7 @@ export default function Planner() {
 
     return (
       <div>
+        {dayNavRow}
         <div className="p-date-header">
           <h2>{formatDateDisplay()}</h2>
           <div className="p-day-num">School Day #{getSchoolDayNumber()} &nbsp;·&nbsp; In session</div>
