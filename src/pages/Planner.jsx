@@ -7,7 +7,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v2.2';
+const APP_VERSION = 'v2.3';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -451,7 +451,19 @@ const styles = `
 .p-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 0.5rem; }
 .p-cal-dow { text-align: center; font-size: 0.7rem; font-weight: 700; color: #6b7280; padding: 0.2rem; text-transform: uppercase; }
 .p-cal-day { aspect-ratio: 1; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.78rem; cursor: pointer; transition: all 0.15s; }
-.p-cal-day.school { background: #dcfce7; color: #166534; font-weight: 600; }
+.p-cal-day.school { background: #dcfce7; color: #166534; font-weight: 600; cursor: pointer; }
+.p-cal-day.school:hover { background: #bbf7d0; }
+.p-cal-day.started { background: #fef3c7; color: #92400e; cursor: pointer; }
+.p-cal-day.started:hover { background: #fde68a; }
+.p-cal-day.noschool { background: #f3f4f6; color: #9ca3af; text-decoration: line-through; }
+.p-cal-day.sick { background: #dbeafe; color: #1e40af; font-weight: 600; cursor: pointer; }
+.p-cal-day.sick:hover { background: #bfdbfe; }
+.p-cal-day.off { background: #f3f4f6; color: #6b7280; cursor: pointer; }
+.p-cal-day.missing { background: #fee2e2; color: #991b1b; font-weight: 600; cursor: pointer; }
+.p-cal-day.missing:hover { background: #fecaca; }
+.p-cal-legend { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+.p-cal-legend-item { display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; color: #6b7280; }
+.p-cal-legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 .p-cal-day.started { background: #fef3c7; color: #92400e; }
 .p-cal-day.weekend { color: #9ca3af; }
 .p-cal-day.future { color: #d1d5db; }
@@ -678,8 +690,16 @@ export default function Planner() {
   const [settingsForm, setSettingsForm] = useState({});
 
   // Attendance calendar
-  const [calMonthIdx, setCalMonthIdx] = useState(0);
-  const [calPopup, setCalPopup] = useState(null);
+  const [calMonthIdx, setCalMonthIdx] = useState(() => {
+    // Start at current month relative to school year (Aug 2025 = index 0)
+    const now = new Date();
+    return Math.max(0, (now.getFullYear() - 2025) * 12 + now.getMonth() - 7);
+  });
+  const [calPopup, setCalPopup] = useState(null); // { dateStr, log, missing }
+
+  // Specific date view (from calendar tap)
+  const [specificDate, setSpecificDate] = useState(null); // YYYY-MM-DD
+  const [specificDateLog, setSpecificDateLog] = useState(null);
 
   // Confirmation dialog
   const [confirmDialog, setConfirmDialog] = useState(null);
@@ -836,6 +856,17 @@ export default function Planner() {
 
     return () => unsubs.forEach(u => u());
   }, [authState, todayId, weekId]);
+
+  // ── Load specific date log when navigating from calendar ─────────────────────
+  useEffect(() => {
+    if (!specificDate || authState !== 'authorized') { setSpecificDateLog(null); return; }
+    // Try allLogs first, fall back to Firestore fetch
+    if (allLogs[specificDate] !== undefined) {
+      setSpecificDateLog(allLogs[specificDate] || {});
+    } else {
+      getDoc(doc(db, 'logs', specificDate)).then(snap => setSpecificDateLog(snap.data() || {}));
+    }
+  }, [specificDate, authState, allLogs]);
 
   // ── Auto-trigger setup wizard for new users ───────────────────────────────────
   useEffect(() => {
@@ -1405,6 +1436,103 @@ export default function Planner() {
   // ── Render helpers ────────────────────────────────────────────────────────────
 
   const renderTodayView = () => {
+    // ── Calendar date override (from tapping a day in the attendance calendar) ──
+    if (specificDate) {
+      const sdLog = specificDateLog || {};
+      const sdDate = new Date(specificDate + 'T00:00:00');
+      const sdFinalized = sdLog.finalized;
+      const sdHours = sdLog.hoursLogged ?? (parseFloat(appSettings.defaultHoursPerDay) || 5.5);
+
+      const saveSDCheck = async (student, subject, checked) => {
+        await setDoc(doc(db, 'logs', specificDate), { lessons: { [student]: { [subject]: { done: checked } } }, startedAt: sdLog.startedAt || new Date() }, { merge: true });
+        setSpecificDateLog(p => ({ ...p, lessons: { ...(p?.lessons||{}), [student]: { ...(p?.lessons?.[student]||{}), [subject]: { ...(p?.lessons?.[student]?.[subject]||{}), done: checked } } } }));
+      };
+      const saveSDNote = async (student, subject, note) => {
+        await setDoc(doc(db, 'logs', specificDate), { lessons: { [student]: { [subject]: { notes: note } } } }, { merge: true });
+      };
+      const finalizeSD = async () => {
+        await setDoc(doc(db, 'logs', specificDate), { finalized: true, finalizedAt: new Date(), hoursLogged: sdHours }, { merge: true });
+        await setDoc(doc(db, 'compliance', 'nd'), { daysCompleted: (compliance.daysCompleted||0)+1, hoursLogged: (compliance.hoursLogged||0)+sdHours }, { merge: true });
+        setSpecificDateLog(p => ({ ...p, finalized: true }));
+        setAllLogs(p => ({ ...p, [specificDate]: { ...(p[specificDate]||{}), finalized: true, hoursLogged: sdHours } }));
+        showToast('Day finalized!');
+      };
+
+      // Determine which week this date is in to get its schedule
+      const sdDayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][sdDate.getDay()];
+      const sdWeekId = getWeekId(sdDate);
+
+      return (
+        <div>
+          <button className="p-btn p-btn-ghost p-btn-sm" style={{marginBottom:'0.75rem'}} onClick={() => { setSpecificDate(null); setSideMenuView('attendance'); setSideMenuOpen(true); }}>
+            ← Back to Calendar
+          </button>
+          <div className="p-date-header">
+            <h2>{formatDateDisplay(sdDate)}</h2>
+            <div className="p-day-num" style={{color: sdFinalized ? '#166534' : '#b4a064'}}>
+              {sdFinalized ? '✓ Finalized' : 'Not yet finalized'}
+            </div>
+          </div>
+
+          {sdLog.noSchool ? (
+            <div className="p-no-school-banner"><strong>No School</strong></div>
+          ) : sdLog.sickDay ? (
+            <div className="p-no-school-banner" style={{background:'#dbeafe',color:'#1e40af'}}><strong>Sick Day</strong> — logged as a school day</div>
+          ) : sdLog.dayOff ? (
+            <div className="p-no-school-banner"><strong>Day Off</strong></div>
+          ) : (
+            <>
+              <div className="p-card">
+                <div className="p-card-title p-mb1">Lessons</div>
+                <div className="p-students-grid">
+                  {['orion','malachi'].map(student => {
+                    const name = student === 'orion' ? appSettings.studentName1||'Orion' : appSettings.studentName2||'Malachi';
+                    return (
+                      <div key={student} className="p-student-card">
+                        <div className="p-student-header">{name}</div>
+                        <div className="p-student-body">
+                          {['reading','math'].map(subject => {
+                            const key = `${student}_${subject}`;
+                            const done = sdLog.lessons?.[student]?.[subject]?.done || false;
+                            return (
+                              <div key={subject} className="p-lesson-row">
+                                <div className="p-lesson-check-row">
+                                  <input type="checkbox" checked={done} onChange={e => saveSDCheck(student, subject, e.target.checked)} style={{width:18,height:18,accentColor:'#1a3a2a',flexShrink:0}} />
+                                  <div className="p-lesson-label">
+                                    <div className="p-lesson-subject">{subject}</div>
+                                  </div>
+                                </div>
+                                <textarea className="p-lesson-notes" placeholder="Notes…"
+                                  defaultValue={sdLog.lessons?.[student]?.[subject]?.notes || ''}
+                                  onBlur={e => saveSDNote(student, subject, e.target.value)} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="p-card">
+                <div className="p-field">
+                  <label>Hours Logged</label>
+                  <input type="number" step="0.5" min="0" defaultValue={sdHours}
+                    onBlur={async e => { await setDoc(doc(db, 'logs', specificDate), { hoursLogged: parseFloat(e.target.value)||0 }, { merge: true }); }} />
+                </div>
+                {sdLog.dayNotes && <div style={{fontSize:'0.85rem',color:'#6b7280',marginTop:'0.5rem'}}>{sdLog.dayNotes}</div>}
+              </div>
+
+              {!sdFinalized && (
+                <button className="p-btn p-btn-green p-btn-block" onClick={finalizeSD}>Finalize This Day</button>
+              )}
+            </>
+          )}
+        </div>
+      );
+    }
+
     const effectiveDay = viewDayOverride || dayOfWeek;
     const isViewingToday = !viewDayOverride;
     const effectiveDayIdx = DAYS_OF_WEEK.indexOf(effectiveDay);
@@ -2194,65 +2322,160 @@ export default function Planner() {
       const mo = m % 12;
       months.push({ year: y, month: mo });
     }
-    const cur = months[calMonthIdx] || months[0];
+    const cur = months[Math.min(calMonthIdx, months.length - 1)] || months[0];
     const monthName = new Date(cur.year, cur.month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     const firstDay = new Date(cur.year, cur.month, 1).getDay();
     const daysInMonth = new Date(cur.year, cur.month + 1, 0).getDate();
-    const today = new Date();
+    const today = new Date(); today.setHours(0,0,0,0);
+    const schoolStart = new Date('2025-08-25'); schoolStart.setHours(0,0,0,0);
 
     const cells = [];
     for (let i = 0; i < firstDay; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-    const getLogForDay = (d) => {
-      const key = `${cur.year}-${String(cur.month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      return allLogs[key];
-    };
+    const dateKey = (d) => `${cur.year}-${String(cur.month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
-    const getCellClass = (d) => {
-      if (!d) return 'p-cal-day empty';
-      const dt = new Date(cur.year, cur.month, d);
+    const getDayStatus = (d) => {
+      if (!d) return 'empty';
+      const dt = new Date(cur.year, cur.month, d); dt.setHours(0,0,0,0);
       const dow = dt.getDay();
-      if (dow === 0 || dow === 6) return 'p-cal-day weekend';
-      if (dt > today) return 'p-cal-day future';
-      const log = getLogForDay(d);
-      if (log?.finalized) return 'p-cal-day school';
-      if (log?.startedAt) return 'p-cal-day started';
-      return 'p-cal-day';
+      if (dow === 0 || dow === 6) return 'weekend';
+      if (dt > today) return 'future';
+      if (dt < schoolStart) return 'future'; // before school year
+      const log = allLogs[dateKey(d)];
+      if (!log) return 'missing';
+      if (log.noSchool || log.note === 'No School') return 'noschool';
+      if (log.sickDay) return 'sick';
+      if (log.dayOff) return 'off';
+      if (log.finalized) return 'school';
+      if (log.startedAt) return 'started';
+      return 'missing';
     };
 
-    const monthDays = Object.keys(allLogs).filter(k => {
+    const statusLabel = { school:'Finalized', started:'In Progress', noschool:'No School', sick:'Sick Day', off:'Day Off', missing:'Needs attention' };
+
+    const openDay = (d) => {
+      const key = dateKey(d);
+      const dt = new Date(cur.year, cur.month, d); dt.setHours(0,0,0,0);
+      if (dt > today) return;
+      if (dt < schoolStart) return;
+      const dow = new Date(cur.year, cur.month, d).getDay();
+      if (dow === 0 || dow === 6) return;
+      const status = getDayStatus(d);
+      if (status === 'missing') {
+        setCalPopup({ dateStr: key, missing: true });
+      } else {
+        setCalPopup({ dateStr: key, log: allLogs[key], missing: false });
+      }
+    };
+
+    const markDay = async (dateStr, type) => {
+      const update = type === 'sick'    ? { finalized: true, sickDay: true, startedAt: new Date(), hoursLogged: parseFloat(appSettings.defaultHoursPerDay) || 5.5 }
+                   : type === 'off'     ? { finalized: true, dayOff: true, noSchool: false }
+                   : type === 'noschool'? { finalized: true, noSchool: true, startedAt: new Date() }
+                   : {};
+      await setDoc(doc(db, 'logs', dateStr), update, { merge: true });
+      // Refresh allLogs for this date
+      setAllLogs(p => ({ ...p, [dateStr]: { ...(p[dateStr] || {}), ...update } }));
+      // Sick day still counts toward compliance
+      if (type === 'sick') {
+        await setDoc(doc(db, 'compliance', 'nd'), {
+          daysCompleted: (compliance.daysCompleted || 0) + 1,
+          hoursLogged: (compliance.hoursLogged || 0) + (parseFloat(appSettings.defaultHoursPerDay) || 5.5)
+        }, { merge: true });
+      }
+      setCalPopup(null);
+      showToast(`Day marked as ${type === 'sick' ? 'Sick Day' : type === 'off' ? 'Day Off' : 'No School'}.`);
+    };
+
+    const navigateToDay = (dateStr) => {
+      setSpecificDate(dateStr);
+      setActiveTab('today');
+      setSideMenuView(null);
+      setSideMenuOpen(false);
+      setCalPopup(null);
+    };
+
+    const monthSchoolDays = Object.keys(allLogs).filter(k => {
       const [y, m] = k.split('-');
-      return parseInt(y) === cur.year && parseInt(m) - 1 === cur.month && allLogs[k]?.finalized;
+      return parseInt(y) === cur.year && parseInt(m) - 1 === cur.month && allLogs[k]?.finalized && !allLogs[k]?.noSchool && !allLogs[k]?.dayOff;
     });
-    const monthHours = monthDays.reduce((acc, k) => acc + (allLogs[k]?.hoursLogged || 0), 0);
+    const monthHours = monthSchoolDays.reduce((acc, k) => acc + (allLogs[k]?.hoursLogged || 0), 0);
+    const monthMissing = cells.filter(d => d && getDayStatus(d) === 'missing').length;
 
     return (
       <div>
+        {/* Navigation */}
         <div className="p-cal-nav">
           <button className="p-btn p-btn-ghost p-btn-sm" onClick={() => setCalMonthIdx(p => Math.max(0, p-1))}>← Prev</button>
           <span className="p-cal-month">{monthName}</span>
           <button className="p-btn p-btn-ghost p-btn-sm" onClick={() => setCalMonthIdx(p => Math.min(months.length-1, p+1))}>Next →</button>
         </div>
-        <div className="p-cal-grid">
-          {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} className="p-cal-dow">{d}</div>)}
-          {cells.map((d, i) => (
-            <div
-              key={i}
-              className={getCellClass(d)}
-              onClick={() => { if (d && getLogForDay(d)) setCalPopup({ d, log: getLogForDay(d), dateStr: `${cur.year}-${String(cur.month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}` }); }}
-            >{d || ''}</div>
+
+        {/* Legend */}
+        <div className="p-cal-legend">
+          {[['#dcfce7','Finalized'],['#fef3c7','In Progress'],['#dbeafe','Sick Day'],['#f3f4f6','No School / Day Off'],['#fee2e2','Needs Attention']].map(([color, label]) => (
+            <div key={label} className="p-cal-legend-item">
+              <div className="p-cal-legend-dot" style={{background:color, border:'1px solid rgba(0,0,0,0.1)'}} />
+              <span>{label}</span>
+            </div>
           ))}
         </div>
-        <div className="p-cal-summary">{monthDays.length} school days · {monthHours.toFixed(1)} hours</div>
+
+        {/* Calendar grid */}
+        <div className="p-cal-grid">
+          {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} className="p-cal-dow">{d}</div>)}
+          {cells.map((d, i) => {
+            const status = getDayStatus(d);
+            return (
+              <div key={i} className={`p-cal-day${status !== 'empty' ? ' ' + status : ''}`} onClick={() => d && openDay(d)}>
+                {d || ''}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Monthly summary */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem',flexWrap:'wrap',gap:'0.5rem'}}>
+          <div style={{fontSize:'0.78rem',color:'#6b7280'}}>
+            <strong style={{color:'#1a3a2a'}}>{monthSchoolDays.length}</strong> school days · <strong style={{color:'#1a3a2a'}}>{monthHours.toFixed(1)}</strong> hours
+          </div>
+          {monthMissing > 0 && (
+            <div style={{fontSize:'0.75rem',background:'#fee2e2',color:'#991b1b',padding:'0.2rem 0.6rem',borderRadius:999,fontWeight:600}}>
+              {monthMissing} day{monthMissing !== 1 ? 's' : ''} need attention
+            </div>
+          )}
+        </div>
+
+        {/* Popup */}
         {calPopup && (
           <div className="p-cal-popup" onClick={() => setCalPopup(null)}>
-            <div className="p-cal-popup-card" onClick={e => e.stopPropagation()}>
-              <h3>{formatShortDate(calPopup.dateStr)}</h3>
-              <p style={{fontSize:'0.85rem',marginBottom:'0.4rem'}}><strong>Status:</strong> {calPopup.log?.finalized ? '✓ Finalized' : '○ In Progress'}</p>
-              <p style={{fontSize:'0.85rem',marginBottom:'0.4rem'}}><strong>Hours:</strong> {calPopup.log?.hoursLogged || 0}</p>
-              {calPopup.log?.dayNotes && <p style={{fontSize:'0.82rem',color:'#6b7280',marginTop:'0.4rem'}}>{calPopup.log.dayNotes}</p>}
-              <button className="p-btn p-btn-ghost p-btn-sm" style={{marginTop:'0.75rem'}} onClick={() => setCalPopup(null)}>Close</button>
+            <div className="p-cal-popup-card" onClick={e => e.stopPropagation()} style={{maxWidth:320}}>
+              <h3 style={{marginBottom:'0.6rem'}}>{formatShortDate(calPopup.dateStr)}</h3>
+
+              {calPopup.missing ? (
+                <>
+                  <p style={{fontSize:'0.82rem',color:'#6b7280',marginBottom:'1rem'}}>This weekday has no log entry. What happened?</p>
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+                    <button className="p-btn p-btn-primary p-btn-block" onClick={() => navigateToDay(calPopup.dateStr)}>Log this day →</button>
+                    <button className="p-btn p-btn-outline p-btn-block" style={{borderColor:'#3b82f6',color:'#1e40af'}} onClick={() => markDay(calPopup.dateStr,'sick')}>Sick Day</button>
+                    <button className="p-btn p-btn-outline p-btn-block" onClick={() => markDay(calPopup.dateStr,'off')}>Unplanned Day Off</button>
+                    <button className="p-btn p-btn-ghost p-btn-block" onClick={() => markDay(calPopup.dateStr,'noschool')}>No School (planned)</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.3rem',marginBottom:'0.75rem'}}>
+                    <p style={{fontSize:'0.85rem'}}><strong>Status:</strong> {calPopup.log?.sickDay ? '🤒 Sick Day' : calPopup.log?.dayOff ? '📅 Day Off' : calPopup.log?.noSchool ? '🚫 No School' : calPopup.log?.finalized ? '✓ Finalized' : '○ In Progress'}</p>
+                    {calPopup.log?.hoursLogged > 0 && <p style={{fontSize:'0.85rem'}}><strong>Hours:</strong> {calPopup.log.hoursLogged}</p>}
+                    {calPopup.log?.dayNotes && <p style={{fontSize:'0.82rem',color:'#6b7280'}}>{calPopup.log.dayNotes}</p>}
+                  </div>
+                  <div style={{display:'flex',gap:'0.5rem'}}>
+                    <button className="p-btn p-btn-primary p-btn-sm" onClick={() => navigateToDay(calPopup.dateStr)}>Open Day →</button>
+                    <button className="p-btn p-btn-ghost p-btn-sm" onClick={() => setCalPopup(null)}>Close</button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -3102,7 +3325,7 @@ export default function Planner() {
         {[['today','TODAY','📅'],['week','WEEK','📋'],['history','HISTORY','📊']].map(([id,label,icon]) => (
           <button
             key={id}
-            onClick={() => setActiveTab(id)}
+            onClick={() => { setActiveTab(id); setSpecificDate(null); }}
             style={{
               flex:1,border:'none',background:'none',padding:'0.4rem 0.5rem',
               cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'0.1rem',
