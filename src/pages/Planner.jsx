@@ -157,8 +157,26 @@ async function loadPdfJs() {
   return window.pdfjsLib;
 }
 
-async function extractFileText(file) {
-  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+// Returns { type: 'image', base64, mimeType } for images, or { type: 'text', text } for everything else
+async function extractFileContent(file) {
+  const name = file.name.toLowerCase();
+  const mime = file.type || '';
+  const isImage = mime.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(name);
+  const isPdf = mime === 'application/pdf' || name.endsWith('.pdf');
+
+  if (isImage) {
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const dataUrl = e.target.result;
+        const base64 = dataUrl.split(',')[1];
+        res({ type: 'image', base64, mimeType: mime || 'image/jpeg' });
+      };
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    });
+  }
+
   if (isPdf) {
     const pdfjsLib = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
@@ -169,26 +187,29 @@ async function extractFileText(file) {
       const content = await page.getTextContent();
       text += content.items.map(item => item.str).join(' ') + '\n';
     }
-    return text;
-  } else {
-    // HTML or text file
-    return new Promise((res, rej) => {
-      const reader = new FileReader();
-      reader.onload = e => {
-        const raw = e.target.result;
-        // Strip HTML tags to get plain text
+    return { type: 'text', text };
+  }
+
+  // HTML, ICS, CSV, TXT, or any other text-based file
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const raw = e.target.result;
+      let text = raw;
+      // If it looks like HTML, strip style/script and extract visible text
+      if (/<html|<body|<div|<table/i.test(raw)) {
         const tmp = document.createElement('div');
-        // Remove style/script blocks so we get only visible calendar text
         const cleaned = raw
           .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
         tmp.innerHTML = cleaned;
-        res((tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim());
-      };
-      reader.onerror = rej;
-      reader.readAsText(file);
-    });
-  }
+        text = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+      }
+      res({ type: 'text', text });
+    };
+    reader.onerror = rej;
+    reader.readAsText(file);
+  });
 }
 
 function estimateSchoolDays(startDateStr) {
@@ -680,6 +701,11 @@ export default function Planner() {
   const [calImporting, setCalImporting] = useState(false);
   const [calImportResult, setCalImportResult] = useState(null);
   const [calInputMode, setCalInputMode] = useState('import'); // 'import' | 'estimate' | 'manual'
+  const [calChatMessages, setCalChatMessages] = useState([]);
+  const [calChatInput, setCalChatInput] = useState('');
+  const [calChatLoading, setCalChatLoading] = useState(false);
+  const calChatEndRef = useRef(null);
+  const calFileInputRef = useRef(null);
 
   // Toast
   const [toast, setToast] = useState(null);
@@ -1312,6 +1338,68 @@ export default function Planner() {
     const baseHours = parseFloat(data.baseHours) || 0;
     await setDoc(doc(db, 'compliance', 'nd'), { baseDays, baseHours }, { merge: true });
     showToast('Setup complete! Your tracker is now synced.');
+  };
+
+  // ── Calendar chat (wizard step 5) ─────────────────────────────────────────────
+  const sendCalendarMessage = async (text, fileContent = null) => {
+    const user = auth.currentUser;
+    if (!user || calChatLoading) return;
+    setCalChatLoading(true);
+
+    const startDate = wizardData.schoolYearStart || '2025-08-25';
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+    // Build user message for display
+    const userMsg = { role: 'user', text: text || (fileContent ? `[Uploaded file]` : ''), fileContent };
+    setCalChatMessages(prev => [...prev, userMsg]);
+    setCalChatInput('');
+    setTimeout(() => calChatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+
+    try {
+      const token = await user.getIdToken();
+      const calSystem = `You are a school calendar analyzer helping count school days for Iron & Light Johnson Academy. The school year started ${startDate}. Today is ${today}. Count Monday–Friday days only, excluding any days labeled No School, Holiday, Break, Vacation, or similar. When you have a confident count, always include the line "SCHOOL_DAYS: N" somewhere in your response. Ask clarifying questions if needed. Be concise and friendly.`;
+
+      // Build context from previous messages
+      const context = calChatMessages.slice(-8).map(m => ({
+        role: m.role,
+        content: m.role === 'user' && m.fileContent?.type === 'image'
+          ? [{ type: 'image', source: { type: 'base64', media_type: m.fileContent.mimeType, data: m.fileContent.base64 } }, { type: 'text', text: m.text || 'Please analyze this calendar.' }]
+          : m.text
+      }));
+
+      // Build new user message
+      let newContent;
+      if (fileContent?.type === 'image') {
+        newContent = [
+          { type: 'image', source: { type: 'base64', media_type: fileContent.mimeType, data: fileContent.base64 } },
+          { type: 'text', text: text || `Please analyze this calendar and count school days from ${startDate} to today.` }
+        ];
+      } else if (fileContent?.type === 'text') {
+        newContent = `${text || `Count school days from ${startDate} to today.`}\n\nCalendar content:\n${fileContent.text.slice(0, 8000)}`;
+      } else {
+        newContent = text;
+      }
+      context.push({ role: 'user', content: newContent });
+
+      const resp = await fetch('/.netlify/functions/claude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ system: calSystem, messages: context })
+      });
+      const data = await resp.json();
+      const aiText = data.content?.[0]?.text || 'Sorry, I could not process that.';
+
+      // Extract day count if present
+      const match = aiText.match(/SCHOOL_DAYS:\s*(\d+)/i);
+      const detectedDays = match ? parseInt(match[1], 10) : null;
+
+      setCalChatMessages(prev => [...prev, { role: 'assistant', text: aiText, detectedDays }]);
+      setTimeout(() => calChatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    } catch (err) {
+      setCalChatMessages(prev => [...prev, { role: 'assistant', text: 'Error: ' + err.message }]);
+    } finally {
+      setCalChatLoading(false);
+    }
   };
 
   // ── Render helpers ────────────────────────────────────────────────────────────
@@ -2547,24 +2635,6 @@ export default function Planner() {
     const totalSteps = 6;
     const setField = (key, val) => setWizardData(p => ({...p, [key]: val}));
 
-    const handleFileImport = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      setCalImporting(true);
-      setCalImportResult(null);
-      try {
-        const text = await extractFileText(file);
-        const days = await parseCalendarWithAI(text, wizardData.schoolYearStart);
-        const hours = days * (parseFloat(wizardData.defaultHoursPerDay) || 5.5);
-        setCalImportResult({ days, hours: Math.round(hours * 10) / 10, source: 'file', fileName: file.name });
-        setField('baseDays', days);
-        setField('baseHours', Math.round(hours * 10) / 10);
-      } catch (err) {
-        setCalImportResult({ error: err.message });
-      } finally {
-        setCalImporting(false);
-      }
-    };
 
     const handleEstimate = () => {
       const days = estimateSchoolDays(wizardData.schoolYearStart);
@@ -2677,7 +2747,7 @@ export default function Planner() {
             {/* Mode tabs */}
             <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid #1a3a2a',marginBottom:'1rem'}}>
               {[['import','Import Calendar'],['estimate','Auto-Estimate'],['manual','Enter Manually']].map(([mode,label]) => (
-                <button key={mode} onClick={() => setCalInputMode(mode)} style={{
+                <button key={mode} onClick={() => { setCalInputMode(mode); setCalImportResult(null); }} style={{
                   flex:1,border:'none',padding:'0.55rem 0.3rem',fontSize:'0.78rem',fontWeight:600,
                   fontFamily:"'Lora',serif",cursor:'pointer',transition:'all 0.15s',
                   background: calInputMode === mode ? '#1a3a2a' : 'white',
@@ -2688,20 +2758,88 @@ export default function Planner() {
 
             {calInputMode === 'import' && (
               <div>
-                <p style={{fontSize:'0.82rem',color:'#6b7280',marginBottom:'0.75rem'}}>
-                  Upload your school calendar as a PDF or HTML file. The AI will count school days, excluding holidays and breaks.
-                </p>
-                <label style={{
-                  display:'block',border:'2px dashed rgba(26,58,42,0.3)',borderRadius:10,
-                  padding:'1.5rem',textAlign:'center',cursor:'pointer',
-                  background: calImporting ? '#f4f9f6' : 'white', color:'#1a3a2a',
-                  fontSize:'0.875rem',fontWeight:600
-                }}>
-                  {calImporting
-                    ? <><div className="p-spinner" style={{margin:'0 auto 0.5rem',width:24,height:24,borderWidth:2}} /> Analyzing calendar…</>
-                    : '+ Click to upload PDF or HTML calendar'}
-                  <input type="file" accept=".pdf,.html,.htm" style={{display:'none'}} onChange={handleFileImport} disabled={calImporting} />
-                </label>
+                {/* Chat messages */}
+                {calChatMessages.length > 0 && (
+                  <div style={{
+                    border:'1px solid rgba(0,0,0,0.1)',borderRadius:10,
+                    background:'#f9f8f6',maxHeight:240,overflowY:'auto',
+                    padding:'0.75rem',marginBottom:'0.75rem',
+                    display:'flex',flexDirection:'column',gap:'0.5rem'
+                  }}>
+                    {calChatMessages.map((m, i) => (
+                      <div key={i} style={{display:'flex',flexDirection:'column',alignItems:m.role==='user'?'flex-end':'flex-start'}}>
+                        {m.fileContent?.type === 'image' && m.role === 'user' && (
+                          <img src={`data:${m.fileContent.mimeType};base64,${m.fileContent.base64}`}
+                            alt="uploaded" style={{maxWidth:120,maxHeight:80,borderRadius:6,marginBottom:4,objectFit:'cover'}} />
+                        )}
+                        <div style={{
+                          maxWidth:'88%',padding:'0.5rem 0.75rem',borderRadius:10,fontSize:'0.82rem',lineHeight:1.5,
+                          background:m.role==='user'?'#1e2d4a':'white',
+                          color:m.role==='user'?'white':'#2c2c2c',
+                          border:m.role==='assistant'?'1px solid rgba(0,0,0,0.08)':'none'
+                        }}>{m.text}</div>
+                        {/* "Use N days" button when AI detects a count */}
+                        {m.role === 'assistant' && m.detectedDays != null && (
+                          <button className="p-btn p-btn-green p-btn-sm" style={{marginTop:'0.3rem'}}
+                            onClick={() => {
+                              const hrs = Math.round(m.detectedDays * (parseFloat(wizardData.defaultHoursPerDay) || 5.5) * 10) / 10;
+                              setField('baseDays', m.detectedDays);
+                              setField('baseHours', hrs);
+                              setCalImportResult({ days: m.detectedDays, hours: hrs, source: 'ai' });
+                            }}>
+                            Use {m.detectedDays} days
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {calChatLoading && (
+                      <div style={{display:'flex',gap:4,padding:'0.4rem 0.6rem'}}>
+                        <div className="p-dot-spin"><span/><span/><span/></div>
+                      </div>
+                    )}
+                    <div ref={calChatEndRef} />
+                  </div>
+                )}
+
+                {/* Confirmed result */}
+                {calImportResult && (
+                  <div style={{background:'#f4f9f6',border:'1.5px solid #1a3a2a',borderRadius:8,padding:'0.65rem 0.9rem',marginBottom:'0.75rem',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <span style={{fontSize:'0.85rem',color:'#1a3a2a',fontWeight:700}}>{calImportResult.days} days selected</span>
+                    <button className="p-btn p-btn-ghost p-btn-sm" style={{color:'#6b7280'}} onClick={() => setCalImportResult(null)}>Change</button>
+                  </div>
+                )}
+
+                {/* Input row */}
+                <div style={{display:'flex',gap:'0.4rem',alignItems:'flex-end'}}>
+                  <button
+                    title="Attach file or photo"
+                    style={{background:'none',border:'1.5px solid rgba(0,0,0,0.15)',borderRadius:8,padding:'0.45rem 0.6rem',cursor:'pointer',fontSize:'1.1rem',minHeight:40,flexShrink:0}}
+                    onClick={() => calFileInputRef.current?.click()}
+                    disabled={calChatLoading}
+                  >📎</button>
+                  <input ref={calFileInputRef} type="file" style={{display:'none'}}
+                    onChange={async e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      e.target.value = '';
+                      const content = await extractFileContent(file);
+                      await sendCalendarMessage(calChatInput || `Please analyze this calendar file (${file.name}) and count school days from ${wizardData.schoolYearStart || '2025-08-25'} to today, excluding holidays and breaks.`, content);
+                      setCalChatInput('');
+                    }}
+                  />
+                  <textarea
+                    placeholder={calChatMessages.length === 0 ? 'Ask about your calendar, or attach a file above…' : 'Follow up or correct the count…'}
+                    value={calChatInput}
+                    rows={1}
+                    style={{flex:1,fontFamily:"'Lora',serif",fontSize:'0.85rem',border:'1.5px solid rgba(0,0,0,0.12)',borderRadius:8,padding:'0.45rem 0.6rem',resize:'none',outline:'none',minHeight:40}}
+                    onChange={e => setCalChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); if (calChatInput.trim()) sendCalendarMessage(calChatInput); } }}
+                  />
+                  <button className="p-btn p-btn-primary p-btn-sm" style={{flexShrink:0}}
+                    disabled={calChatLoading || !calChatInput.trim()}
+                    onClick={() => sendCalendarMessage(calChatInput)}>Send</button>
+                </div>
+                <p style={{fontSize:'0.72rem',color:'#9ca3af',marginTop:'0.4rem'}}>Attach any file type — PDF, image, HTML, ICS. Then chat to refine the count.</p>
               </div>
             )}
 
@@ -2713,6 +2851,13 @@ export default function Planner() {
                 <button className="p-btn p-btn-outline p-btn-block" onClick={handleEstimate}>
                   Calculate Mon–Fri Days
                 </button>
+                {calImportResult && (
+                  <div style={{background:'#f4f9f6',border:'1.5px solid #1a3a2a',borderRadius:10,padding:'1rem',marginTop:'1rem'}}>
+                    <div style={{fontSize:'1.5rem',fontWeight:700,color:'#1a3a2a'}}>{calImportResult.days} days</div>
+                    <div style={{fontSize:'0.8rem',color:'#6b7280',marginTop:'0.2rem'}}>≈ {calImportResult.hours} hours at {wizardData.defaultHoursPerDay || 5.5}h/day</div>
+                    <div style={{fontSize:'0.75rem',color:'#6b7280',marginTop:'0.5rem'}}>Adjust manually if needed — holidays are not excluded.</div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2732,24 +2877,6 @@ export default function Planner() {
                       onChange={e => setField('baseHours', parseFloat(e.target.value) || 0)} />
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Result card */}
-            {calImportResult && !calImportResult.error && (
-              <div style={{background:'#f4f9f6',border:'1.5px solid #1a3a2a',borderRadius:10,padding:'1rem',marginTop:'1rem'}}>
-                <div style={{fontSize:'0.8rem',fontWeight:700,color:'#1a3a2a',marginBottom:'0.3rem',textTransform:'uppercase',letterSpacing:'0.05em'}}>
-                  {calImportResult.source === 'file' ? `Parsed from ${calImportResult.fileName}` : 'Estimated (Mon–Fri only)'}
-                </div>
-                <div style={{fontSize:'1.5rem',fontWeight:700,color:'#1a3a2a'}}>{calImportResult.days} days</div>
-                <div style={{fontSize:'0.8rem',color:'#6b7280',marginTop:'0.2rem'}}>≈ {calImportResult.hours} hours at {wizardData.defaultHoursPerDay || 5.5}h/day</div>
-                <div style={{fontSize:'0.75rem',color:'#6b7280',marginTop:'0.5rem'}}>You can fine-tune these numbers in the manual tab or later in Settings.</div>
-              </div>
-            )}
-            {calImportResult?.error && (
-              <div style={{background:'#fff5f5',border:'1.5px solid #fca5a5',borderRadius:10,padding:'1rem',marginTop:'1rem',fontSize:'0.82rem',color:'#dc2626'}}>
-                <strong>Import error:</strong> {calImportResult.error}
-                <div style={{marginTop:'0.5rem',color:'#6b7280'}}>Try the "Auto-Estimate" or "Enter Manually" tabs instead.</div>
               </div>
             )}
           </div>
