@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const admin = require('firebase-admin');
 
 if (!admin.apps.length) {
