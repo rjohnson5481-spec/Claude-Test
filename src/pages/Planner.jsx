@@ -7,7 +7,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v2.1';
+const APP_VERSION = 'v2.2';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
