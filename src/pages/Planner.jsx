@@ -178,8 +178,12 @@ async function extractFileText(file) {
         const raw = e.target.result;
         // Strip HTML tags to get plain text
         const tmp = document.createElement('div');
-        tmp.innerHTML = raw;
-        res(tmp.textContent || tmp.innerText || raw);
+        // Remove style/script blocks so we get only visible calendar text
+        const cleaned = raw
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+        tmp.innerHTML = cleaned;
+        res((tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim());
       };
       reader.onerror = rej;
       reader.readAsText(file);
@@ -1295,6 +1299,12 @@ export default function Planner() {
     if (data.studentName1) settingsUpdate.studentName1 = data.studentName1;
     if (data.studentName2) settingsUpdate.studentName2 = data.studentName2;
     if (data.address != null) settingsUpdate.address = data.address;
+    // Extra students beyond 2
+    if (data.extraStudents?.length > 0) {
+      data.extraStudents.forEach((name, i) => {
+        if (name.trim()) settingsUpdate[`studentName${i + 3}`] = name.trim();
+      });
+    }
     if (Object.keys(settingsUpdate).length > 0) {
       await setDoc(doc(db, 'settings', 'app'), settingsUpdate, { merge: true });
     }
@@ -2610,22 +2620,44 @@ export default function Planner() {
             </div>
           </div>
         );
-        case 3: return (
-          <div>
-            <div className="p-field-row">
-              <div className="p-field">
-                <label>Student 1 Name</label>
-                <input type="text" value={wizardData.studentName1 || ''} placeholder="e.g. Orion"
-                  onChange={e => setField('studentName1', e.target.value)} />
+        case 3: {
+          const extraStudents = wizardData.extraStudents || [];
+          return (
+            <div>
+              <div className="p-field-row">
+                <div className="p-field">
+                  <label>Student 1 Name</label>
+                  <input type="text" value={wizardData.studentName1 || ''} placeholder="e.g. Orion"
+                    onChange={e => setField('studentName1', e.target.value)} />
+                </div>
+                <div className="p-field">
+                  <label>Student 2 Name</label>
+                  <input type="text" value={wizardData.studentName2 || ''} placeholder="e.g. Malachi"
+                    onChange={e => setField('studentName2', e.target.value)} />
+                </div>
               </div>
-              <div className="p-field">
-                <label>Student 2 Name</label>
-                <input type="text" value={wizardData.studentName2 || ''} placeholder="e.g. Malachi"
-                  onChange={e => setField('studentName2', e.target.value)} />
-              </div>
+              {extraStudents.map((name, i) => (
+                <div key={i} style={{display:'flex',gap:'0.5rem',alignItems:'center',marginBottom:'0.5rem'}}>
+                  <div className="p-field" style={{flex:1,margin:0}}>
+                    <label>Student {i + 3} Name</label>
+                    <input type="text" value={name} placeholder={`e.g. Student ${i + 3}`}
+                      onChange={e => {
+                        const updated = [...extraStudents];
+                        updated[i] = e.target.value;
+                        setField('extraStudents', updated);
+                      }} />
+                  </div>
+                  <button className="p-btn p-btn-ghost p-btn-sm" style={{marginTop:'1.2rem',color:'#dc2626'}}
+                    onClick={() => setField('extraStudents', extraStudents.filter((_,j) => j !== i))}>✕</button>
+                </div>
+              ))}
+              <button className="p-btn p-btn-outline p-btn-sm" style={{marginTop:'0.5rem'}}
+                onClick={() => setField('extraStudents', [...extraStudents, ''])}>
+                + Add Student
+              </button>
             </div>
-          </div>
-        );
+          );
+        }
         case 4: return (
           <div>
             <div className="p-field">
