@@ -459,6 +459,30 @@ function Toast({ message, onDone }) {
 }
 
 
+// ─── Chat bubble renderer (handles <button> tags from AI) ────────────────────
+function renderChatBubble(text, onApply) {
+  const parts = text.split(/(<button[^>]*>[\s\S]*?<\/button>)/gi);
+  return parts.map((part, i) => {
+    const m = part.match(/<button[^>]*>([\s\S]*?)<\/button>/i);
+    if (m) {
+      return (
+        <button
+          key={i}
+          style={{
+            display:'inline-block', marginTop:'0.6rem',
+            background:'#1e2d4a', color:'white', border:'none',
+            borderRadius:'7px', padding:'0.45rem 1rem',
+            fontFamily:'inherit', fontSize:'0.85rem',
+            fontWeight:600, cursor:'pointer'
+          }}
+          onClick={onApply}
+        >{m[1]}</button>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Planner() {
   // Auth
@@ -805,6 +829,40 @@ export default function Planner() {
   const saveWeekNotes = useCallback(async (notes) => {
     await setDoc(doc(db, 'schedule', weekId), { weekNotes: notes }, { merge: true });
   }, [weekId]);
+
+  // ── Parse AI response into confirmation dialog rows ───────────────────────────
+  const handleApplyFromChat = (aiText) => {
+    // Extract structured data from AI message text
+    // Look for patterns like: Student: Both/Orion/Malachi, Subject: Bible, Lesson: ...
+    const rows = [];
+    const lines = aiText.split('\n').filter(l => l.trim());
+    let day = dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday' ? 'Tuesday' : dayOfWeek;
+    let student = 'Both';
+    let subject = 'Bible';
+    let lesson = '';
+
+    lines.forEach(line => {
+      const dayMatch = line.match(/(?:date|day)[:\s]+(\w+day)/i);
+      const studentMatch = line.match(/students?[:\s]+(both|orion|malachi)/i);
+      const subjectMatch = line.match(/subject[:\s]+(\w+)/i);
+      const lessonMatch = line.match(/\*\*(.+?)\*\*/) || line.match(/lesson[:\s]+(.+)/i);
+
+      if (dayMatch) day = dayMatch[1];
+      if (studentMatch) student = studentMatch[1].charAt(0).toUpperCase() + studentMatch[1].slice(1).toLowerCase();
+      if (subjectMatch) subject = subjectMatch[1].charAt(0).toUpperCase() + subjectMatch[1].slice(1).toLowerCase();
+      if (lessonMatch) lesson = lessonMatch[1].trim();
+    });
+
+    // If "Both", split into two rows
+    if (student === 'Both') {
+      rows.push({ day, student: 'Orion', subject, lesson, checked: true });
+      rows.push({ day, student: 'Malachi', subject, lesson, checked: true });
+    } else {
+      rows.push({ day, student, subject, lesson, checked: true });
+    }
+
+    setConfirmDialog({ rows });
+  };
 
   // ── Chat ──────────────────────────────────────────────────────────────────────
   const sendChatMessage = async (text) => {
@@ -1899,7 +1957,11 @@ export default function Planner() {
             )}
             {chatMessages.map((msg, i) => (
               <div key={i} className={`p-chat-msg ${msg.role}`}>
-                <div className="p-chat-bubble">{msg.text}</div>
+                <div className="p-chat-bubble">
+                  {msg.role === 'assistant'
+                    ? renderChatBubble(msg.text, () => handleApplyFromChat(msg.text))
+                    : msg.text}
+                </div>
                 <span className="p-chat-ts">{formatTime(msg.timestamp)}</span>
               </div>
             ))}
