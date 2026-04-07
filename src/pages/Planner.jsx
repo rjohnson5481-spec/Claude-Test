@@ -12,7 +12,13 @@ const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-const CHAT_SYSTEM_PROMPT = `You are the AI assistant for Iron & Light Johnson Academy, a classical/Charlotte Mason homeschool. You help Rob plan lessons, review schedules, log progress, and manage the academic record. Students are Orion (Reading 3, Math 3 TGTB) and Malachi (Reading 2, Math 2). School year started August 25, 2025. ND requires 175 days or 1025 hours. Be warm, concise, and professional. When Rob asks you to add, update, or change schedule or log data, confirm what you understood and present an Apply button — never write to the database without confirmation.`;
+const CHAT_SYSTEM_PROMPT = `You are the AI assistant for Iron & Light Johnson Academy, a classical/Charlotte Mason homeschool. You help Rob plan lessons, review schedules, log progress, and manage the academic record. Students are Orion (Reading 3, Math 3 TGTB) and Malachi (Reading 2, Math 2). School year started August 25, 2025. ND requires 175 days or 1025 hours. Be warm, concise, and professional.
+
+When Rob asks you to add, update, or change schedule data, confirm what you understood, then output this EXACT structured block (required for the Apply button to work):
+[APPLY_DATA]{"rows":[{"day":"Tuesday","student":"Orion","subject":"bible","lesson":"Lesson 12 of Heroes"},{"day":"Tuesday","student":"Malachi","subject":"bible","lesson":"Lesson 12 of Heroes"}]}[/APPLY_DATA]
+Then on the next line include <button>Apply to Schedule</button>
+
+Rules: day must be one of Monday/Tuesday/Wednesday/Thursday/Friday. subject must be lowercase (reading, math, science, history, bible, or any custom subject). Never write to the database without confirmation.`;
 
 const SEED_SCHEDULE = {
   Monday: { note: 'No School' },
@@ -834,8 +840,17 @@ export default function Planner() {
 
   // ── Parse AI response into confirmation dialog rows ───────────────────────────
   const handleApplyFromChat = (aiText) => {
-    // Extract structured data from AI message text
-    // Look for patterns like: Student: Both/Orion/Malachi, Subject: Bible, Lesson: ...
+    // Primary: extract structured JSON block [APPLY_DATA]...[/APPLY_DATA]
+    const jsonMatch = aiText.match(/\[APPLY_DATA\]([\s\S]*?)\[\/APPLY_DATA\]/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[1]);
+        const rows = (parsed.rows || []).map(r => ({ ...r, checked: true }));
+        if (rows.length > 0) { setConfirmDialog({ rows }); return; }
+      } catch {}
+    }
+
+    // Fallback: text parsing with markdown stripped
     const rows = [];
     const lines = aiText.split('\n').filter(l => l.trim());
     let day = dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday' ? 'Tuesday' : dayOfWeek;
@@ -844,10 +859,12 @@ export default function Planner() {
     let lesson = '';
 
     lines.forEach(line => {
-      const dayMatch = line.match(/(?:date|day)[:\s]+(\w+day)/i);
-      const studentMatch = line.match(/students?[:\s]+(both|orion|malachi)/i);
-      const subjectMatch = line.match(/subject[:\s]+(\w+)/i);
-      const lessonMatch = line.match(/\*\*(.+?)\*\*/) || line.match(/lesson[:\s]+(.+)/i);
+      // Strip markdown bold markers before matching
+      const stripped = line.replace(/\*\*/g, '').replace(/^\s*[-•]\s*/, '').trim();
+      const dayMatch = stripped.match(/(?:date|day)[:\s]+(\w+day)/i);
+      const studentMatch = stripped.match(/students?[:\s]+(both|orion|malachi)/i);
+      const subjectMatch = stripped.match(/subject[:\s]+(\w+)/i);
+      const lessonMatch = stripped.match(/lesson[:\s]+(.+)/i);
 
       if (dayMatch) day = dayMatch[1];
       if (studentMatch) student = studentMatch[1].charAt(0).toUpperCase() + studentMatch[1].slice(1).toLowerCase();
@@ -855,7 +872,6 @@ export default function Planner() {
       if (lessonMatch) lesson = lessonMatch[1].trim();
     });
 
-    // If "Both", split into two rows
     if (student === 'Both') {
       rows.push({ day, student: 'Orion', subject, lesson, checked: true });
       rows.push({ day, student: 'Malachi', subject, lesson, checked: true });
@@ -1129,21 +1145,30 @@ export default function Planner() {
             </div>
           ) : (
             <div className="p-students-grid">
-              {['orion', 'malachi'].map(student => (
-                <div key={student} className="p-student-card">
-                  <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
-                  <div className="p-student-body">
-                    {['reading', 'math'].map(subject => (
-                      <div key={subject} className="p-lesson-row">
-                        <div className="p-lesson-subject">{subject}</div>
-                        <div className="p-lesson-text" style={{fontSize:'0.85rem',marginTop:'0.15rem',color:'#2c2c2c'}}>
-                          {daySchedule?.[student]?.[subject] || '—'}
-                        </div>
-                      </div>
-                    ))}
+              {['orion', 'malachi'].map(student => {
+                const std = ['reading','math'];
+                const extra = Object.keys(daySchedule?.[student] || {}).filter(k => !std.includes(k) && typeof (daySchedule?.[student]?.[k]) === 'string' && daySchedule[student][k]);
+                const subjects = [...std, ...extra];
+                return (
+                  <div key={student} className="p-student-card">
+                    <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
+                    <div className="p-student-body">
+                      {subjects.map(subject => {
+                        const lesson = daySchedule?.[student]?.[subject];
+                        if (!lesson) return null;
+                        return (
+                          <div key={subject} className="p-lesson-row">
+                            <div className="p-lesson-subject">{subject}</div>
+                            <div className="p-lesson-text" style={{fontSize:'0.85rem',marginTop:'0.15rem',color:'#2c2c2c'}}>
+                              {lesson}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1178,21 +1203,30 @@ export default function Planner() {
             <div className="p-day-num">School Day #{getSchoolDayNumber()}</div>
           </div>
           <div className="p-students-grid">
-            {['orion', 'malachi'].map(student => (
-              <div key={student} className="p-student-card">
-                <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
-                <div className="p-student-body">
-                  {['reading', 'math'].map(subject => (
-                    <div key={subject} className="p-lesson-row">
-                      <div className="p-lesson-subject">{subject}</div>
-                      <div className="p-lesson-text" style={{fontSize:'0.85rem',marginTop:'0.15rem',color:'#6b7280'}}>
-                        {daySchedule?.[student]?.[subject] || '—'}
-                      </div>
-                    </div>
-                  ))}
+            {['orion', 'malachi'].map(student => {
+              const std = ['reading','math'];
+              const extra = Object.keys(daySchedule?.[student] || {}).filter(k => !std.includes(k) && typeof (daySchedule?.[student]?.[k]) === 'string' && daySchedule[student][k]);
+              const subjects = [...std, ...extra];
+              return (
+                <div key={student} className="p-student-card">
+                  <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
+                  <div className="p-student-body">
+                    {subjects.map(subject => {
+                      const lesson = daySchedule?.[student]?.[subject];
+                      if (!lesson) return null;
+                      return (
+                        <div key={subject} className="p-lesson-row">
+                          <div className="p-lesson-subject">{subject}</div>
+                          <div className="p-lesson-text" style={{fontSize:'0.85rem',marginTop:'0.15rem',color:'#6b7280'}}>
+                            {lesson}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div style={{textAlign:'center',marginTop:'1.25rem'}}>
             <button className="p-btn p-btn-green p-btn-lg" onClick={startSchoolDay}>
@@ -1217,45 +1251,50 @@ export default function Planner() {
 
         {/* Lesson cards */}
         <div className="p-students-grid">
-          {['orion', 'malachi'].map(student => (
-            <div key={student} className="p-student-card">
-              <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
-              <div className="p-student-body">
-                {['reading', 'math'].map(subject => {
-                  const key = `${student}_${subject}`;
-                  const lesson = daySchedule?.[student]?.[subject];
-                  if (!lesson) return null;
-                  const logData = todayLog?.lessons?.[student]?.[subject] || {};
-                  return (
-                    <div key={subject} className="p-lesson-row">
-                      <div className="p-lesson-check-row">
-                        <input
-                          type="checkbox"
-                          checked={!!lessonChecks[key]}
-                          onChange={e => { const v = e.target.checked; setLessonChecks(p => ({...p,[key]:v})); saveLessonCheck(student, subject, v); }}
-                        />
-                        <div className="p-lesson-label">
-                          <div className="p-lesson-subject">{subject}</div>
-                          <div className="p-lesson-text">
-                            {lesson}
-                            {logData.carried && <span className="p-badge-carried">carried</span>}
-                            {logData.skipped && <span className="p-badge-skipped">skipped</span>}
+          {['orion', 'malachi'].map(student => {
+            const std = ['reading','math'];
+            const extra = Object.keys(daySchedule?.[student] || {}).filter(k => !std.includes(k) && typeof (daySchedule?.[student]?.[k]) === 'string' && daySchedule[student][k]);
+            const subjects = [...std, ...extra];
+            return (
+              <div key={student} className="p-student-card">
+                <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
+                <div className="p-student-body">
+                  {subjects.map(subject => {
+                    const key = `${student}_${subject}`;
+                    const lesson = daySchedule?.[student]?.[subject];
+                    if (!lesson) return null;
+                    const logData = todayLog?.lessons?.[student]?.[subject] || {};
+                    return (
+                      <div key={subject} className="p-lesson-row">
+                        <div className="p-lesson-check-row">
+                          <input
+                            type="checkbox"
+                            checked={!!lessonChecks[key]}
+                            onChange={e => { const v = e.target.checked; setLessonChecks(p => ({...p,[key]:v})); saveLessonCheck(student, subject, v); }}
+                          />
+                          <div className="p-lesson-label">
+                            <div className="p-lesson-subject">{subject}</div>
+                            <div className="p-lesson-text">
+                              {lesson}
+                              {logData.carried && <span className="p-badge-carried">carried</span>}
+                              {logData.skipped && <span className="p-badge-skipped">skipped</span>}
+                            </div>
                           </div>
                         </div>
+                        <textarea
+                          className="p-lesson-notes"
+                          placeholder="Notes..."
+                          value={lessonNotes[key] || ''}
+                          onChange={e => setLessonNotes(p => ({...p,[key]:e.target.value}))}
+                          onBlur={e => saveLessonNote(student, subject, e.target.value)}
+                        />
                       </div>
-                      <textarea
-                        className="p-lesson-notes"
-                        placeholder="Notes..."
-                        value={lessonNotes[key] || ''}
-                        onChange={e => setLessonNotes(p => ({...p,[key]:e.target.value}))}
-                        onBlur={e => saveLessonNote(student, subject, e.target.value)}
-                      />
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Extra Subjects */}
@@ -1429,10 +1468,13 @@ export default function Planner() {
                     <>
                       {['orion','malachi'].map(student => {
                         const studentName = student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi';
+                        const std = ['reading','math'];
+                        const extra = Object.keys(dayData?.[student] || {}).filter(k => !std.includes(k) && typeof (dayData?.[student]?.[k]) === 'string' && dayData[student][k]);
+                        const subjects = [...std, ...extra];
                         return (
                           <div key={student} className="p-day-student">
                             <div className="p-day-student-name">{studentName}</div>
-                            {['reading','math'].map(subject => {
+                            {subjects.map(subject => {
                               const lesson = dayData?.[student]?.[subject];
                               if (!lesson) return null;
                               const done = log?.lessons?.[student]?.[subject]?.done;
