@@ -13,7 +13,7 @@ if (!admin.apps.length) {
   });
 }
 
-const ALLOWED_EMAILS = ['PASTE_YOUR_GOOGLE_EMAIL_HERE'];
+const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 
 const allowedOrigins = [
   'https://planner.grasphislove.com',
