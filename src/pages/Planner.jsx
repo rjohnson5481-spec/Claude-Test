@@ -143,6 +143,65 @@ function getWeekLabel(weekId) {
   return monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// ─── Calendar Import Helpers ─────────────────────────────────────────────────
+async function loadPdfJs() {
+  if (window.pdfjsLib) return window.pdfjsLib;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  return window.pdfjsLib;
+}
+
+async function extractFileText(file) {
+  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  if (isPdf) {
+    const pdfjsLib = await loadPdfJs();
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(item => item.str).join(' ') + '\n';
+    }
+    return text;
+  } else {
+    // HTML or text file
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const raw = e.target.result;
+        // Strip HTML tags to get plain text
+        const tmp = document.createElement('div');
+        tmp.innerHTML = raw;
+        res(tmp.textContent || tmp.innerText || raw);
+      };
+      reader.onerror = rej;
+      reader.readAsText(file);
+    });
+  }
+}
+
+function estimateSchoolDays(startDateStr) {
+  const start = new Date(startDateStr || '2025-08-25');
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  let count = 0;
+  const d = new Date(start);
+  d.setHours(0,0,0,0);
+  while (d <= today) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    d.setDate(d.getDate() + 1);
+  }
+  return count;
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = `
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
@@ -610,6 +669,14 @@ export default function Planner() {
   // Photo import
   const [pendingImages, setPendingImages] = useState([]);
 
+  // Setup Wizard
+  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  const [setupWizardStep, setSetupWizardStep] = useState(1);
+  const [wizardData, setWizardData] = useState({});
+  const [calImporting, setCalImporting] = useState(false);
+  const [calImportResult, setCalImportResult] = useState(null);
+  const [calInputMode, setCalInputMode] = useState('import'); // 'import' | 'estimate' | 'manual'
+
   // Toast
   const [toast, setToast] = useState(null);
 
@@ -739,6 +806,25 @@ export default function Planner() {
 
     return () => unsubs.forEach(u => u());
   }, [authState, todayId, weekId]);
+
+  // ── Auto-trigger setup wizard for new users ───────────────────────────────────
+  useEffect(() => {
+    if (authState !== 'authorized') return;
+    // Show wizard if no compliance data has ever been set (truly fresh install)
+    if (compliance.baseDays === undefined && compliance.daysCompleted === 0 && Object.keys(allLogs).length === 0) {
+      setSetupWizardOpen(true);
+      setSetupWizardStep(1);
+      setWizardData({
+        schoolYearStart: appSettings.schoolYearStart || '2025-08-25',
+        defaultHoursPerDay: appSettings.defaultHoursPerDay || 5.5,
+        studentName1: appSettings.studentName1 || 'Orion',
+        studentName2: appSettings.studentName2 || 'Malachi',
+        address: appSettings.address || '',
+        baseDays: 0,
+        baseHours: 0,
+      });
+    }
+  }, [authState, compliance.baseDays, compliance.daysCompleted, allLogs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Scroll chat to bottom ────────────────────────────────────────────────────
   useEffect(() => {
@@ -1182,6 +1268,41 @@ export default function Planner() {
     downloadPDF(content, 'Annual ND Compliance Report');
   };
 
+  // ── Calendar AI parser ────────────────────────────────────────────────────────
+  const parseCalendarWithAI = async (text, startDateStr) => {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Not authenticated');
+    const token = await user.getIdToken();
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const prompt = `You are a school calendar analyzer. Count the number of school days (Monday–Friday only, excluding any day labeled No School, Holiday, Break, Vacation, or similar) in the provided calendar from ${startDateStr || '2025-08-25'} through ${today}. Reply with EXACTLY one line in this format:\nSCHOOL_DAYS: <number>\n\nCalendar text:\n${text.slice(0, 6000)}`;
+    const resp = await fetch('/.netlify/functions/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ system: 'You are a school calendar analyzer. Be precise and return only the requested format.', messages: [{ role: 'user', content: prompt }] })
+    });
+    const data = await resp.json();
+    const aiText = data.content?.[0]?.text || '';
+    const match = aiText.match(/SCHOOL_DAYS:\s*(\d+)/i);
+    if (match) return parseInt(match[1], 10);
+    throw new Error('Could not parse day count from calendar. AI response: ' + aiText.slice(0, 200));
+  };
+
+  // ── Save wizard data to Firestore ─────────────────────────────────────────────
+  const saveWizardData = async (data) => {
+    const settingsUpdate = {};
+    if (data.schoolYearStart) settingsUpdate.schoolYearStart = data.schoolYearStart;
+    if (data.defaultHoursPerDay != null) settingsUpdate.defaultHoursPerDay = parseFloat(data.defaultHoursPerDay);
+    if (data.studentName1) settingsUpdate.studentName1 = data.studentName1;
+    if (data.studentName2) settingsUpdate.studentName2 = data.studentName2;
+    if (data.address != null) settingsUpdate.address = data.address;
+    if (Object.keys(settingsUpdate).length > 0) {
+      await setDoc(doc(db, 'settings', 'app'), settingsUpdate, { merge: true });
+    }
+    const baseDays = parseInt(data.baseDays) || 0;
+    const baseHours = parseFloat(data.baseHours) || 0;
+    await setDoc(doc(db, 'compliance', 'nd'), { baseDays, baseHours }, { merge: true });
+    showToast('Setup complete! Your tracker is now synced.');
+  };
 
   // ── Render helpers ────────────────────────────────────────────────────────────
 
@@ -2239,6 +2360,26 @@ export default function Planner() {
 
   const renderSettings = () => (
     <div>
+      <div style={{marginBottom:'1.25rem'}}>
+        <button className="p-btn p-btn-outline p-btn-sm" onClick={() => {
+          setWizardData({
+            schoolYearStart: settingsForm.schoolYearStart || appSettings.schoolYearStart || '2025-08-25',
+            defaultHoursPerDay: settingsForm.defaultHoursPerDay || appSettings.defaultHoursPerDay || 5.5,
+            studentName1: settingsForm.studentName1 || appSettings.studentName1 || 'Orion',
+            studentName2: settingsForm.studentName2 || appSettings.studentName2 || 'Malachi',
+            address: settingsForm.address || appSettings.address || '',
+            baseDays: compliance.baseDays ?? 0,
+            baseHours: compliance.baseHours ?? 0,
+          });
+          setSetupWizardStep(1);
+          setCalImportResult(null);
+          setSetupWizardOpen(true);
+        }}>
+          Launch Setup Wizard
+        </button>
+        <p style={{fontSize:'0.75rem',color:'#6b7280',marginTop:'0.4rem'}}>Re-run the guided setup to update compliance starting values or import a calendar.</p>
+      </div>
+      <hr className="p-divider" style={{marginTop:0}} />
       <div className="p-settings-section">
         <h3>School Year</h3>
         <div className="p-field"><label>School Year Start</label>
@@ -2384,6 +2525,259 @@ export default function Planner() {
           <div className="p-modal-actions">
             <button className="p-btn p-btn-ghost" onClick={() => setConfirmDialog(null)}>Cancel</button>
             <button className="p-btn p-btn-primary" onClick={applyScheduleDialog}>Apply to Schedule →</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Setup Wizard ──────────────────────────────────────────────────────────────
+  const renderSetupWizard = () => {
+    if (!setupWizardOpen) return null;
+    const totalSteps = 6;
+    const setField = (key, val) => setWizardData(p => ({...p, [key]: val}));
+
+    const handleFileImport = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setCalImporting(true);
+      setCalImportResult(null);
+      try {
+        const text = await extractFileText(file);
+        const days = await parseCalendarWithAI(text, wizardData.schoolYearStart);
+        const hours = days * (parseFloat(wizardData.defaultHoursPerDay) || 5.5);
+        setCalImportResult({ days, hours: Math.round(hours * 10) / 10, source: 'file', fileName: file.name });
+        setField('baseDays', days);
+        setField('baseHours', Math.round(hours * 10) / 10);
+      } catch (err) {
+        setCalImportResult({ error: err.message });
+      } finally {
+        setCalImporting(false);
+      }
+    };
+
+    const handleEstimate = () => {
+      const days = estimateSchoolDays(wizardData.schoolYearStart);
+      const hours = days * (parseFloat(wizardData.defaultHoursPerDay) || 5.5);
+      setCalImportResult({ days, hours: Math.round(hours * 10) / 10, source: 'estimate' });
+      setField('baseDays', days);
+      setField('baseHours', Math.round(hours * 10) / 10);
+    };
+
+    const canNext = () => {
+      if (setupWizardStep === 5) return (wizardData.baseDays >= 0);
+      return true;
+    };
+
+    const handleFinish = async () => {
+      await saveWizardData(wizardData);
+      setSetupWizardOpen(false);
+    };
+
+    const stepContent = () => {
+      switch (setupWizardStep) {
+        case 1: return (
+          <div>
+            <div style={{textAlign:'center',marginBottom:'1.5rem'}}>
+              <div style={{fontSize:'2.5rem',marginBottom:'0.5rem'}}>🏫</div>
+              <p style={{fontSize:'0.95rem',color:'#2c2c2c',lineHeight:1.6}}>
+                Welcome! Let's sync your planner with where you actually are in the school year — so your compliance numbers are accurate from day one.
+              </p>
+            </div>
+            <div style={{background:'#f4f9f6',borderRadius:10,padding:'1rem',fontSize:'0.85rem',color:'#1a3a2a'}}>
+              <strong>We'll set up:</strong>
+              <ul style={{marginTop:'0.4rem',paddingLeft:'1.25rem',lineHeight:2}}>
+                <li>School year start date</li>
+                <li>Student names</li>
+                <li>Days already completed (via calendar import or estimate)</li>
+              </ul>
+            </div>
+          </div>
+        );
+        case 2: return (
+          <div>
+            <div className="p-field">
+              <label>School Year Start Date</label>
+              <input type="date" value={wizardData.schoolYearStart || '2025-08-25'}
+                onChange={e => setField('schoolYearStart', e.target.value)} />
+            </div>
+            <div className="p-field">
+              <label>Default School Hours Per Day</label>
+              <input type="number" step="0.5" min="0" max="24"
+                value={wizardData.defaultHoursPerDay || 5.5}
+                onChange={e => setField('defaultHoursPerDay', e.target.value)} />
+              <div style={{fontSize:'0.75rem',color:'#6b7280',marginTop:'0.3rem'}}>Used to estimate total hours from day count</div>
+            </div>
+          </div>
+        );
+        case 3: return (
+          <div>
+            <div className="p-field-row">
+              <div className="p-field">
+                <label>Student 1 Name</label>
+                <input type="text" value={wizardData.studentName1 || ''} placeholder="e.g. Orion"
+                  onChange={e => setField('studentName1', e.target.value)} />
+              </div>
+              <div className="p-field">
+                <label>Student 2 Name</label>
+                <input type="text" value={wizardData.studentName2 || ''} placeholder="e.g. Malachi"
+                  onChange={e => setField('studentName2', e.target.value)} />
+              </div>
+            </div>
+          </div>
+        );
+        case 4: return (
+          <div>
+            <div className="p-field">
+              <label>Academy Address (for ND reports)</label>
+              <textarea value={wizardData.address || ''} placeholder="123 Main St, City, ND 58001"
+                onChange={e => setField('address', e.target.value)}
+                style={{minHeight:72}} />
+            </div>
+            <p style={{fontSize:'0.78rem',color:'#6b7280'}}>This appears on your annual compliance report. You can update it anytime in Settings.</p>
+          </div>
+        );
+        case 5: return (
+          <div>
+            <p style={{fontSize:'0.875rem',color:'#2c2c2c',marginBottom:'1rem',lineHeight:1.5}}>
+              How many school days have you completed since {wizardData.schoolYearStart || '2025-08-25'}? This sets your compliance starting point.
+            </p>
+            {/* Mode tabs */}
+            <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid #1a3a2a',marginBottom:'1rem'}}>
+              {[['import','Import Calendar'],['estimate','Auto-Estimate'],['manual','Enter Manually']].map(([mode,label]) => (
+                <button key={mode} onClick={() => setCalInputMode(mode)} style={{
+                  flex:1,border:'none',padding:'0.55rem 0.3rem',fontSize:'0.78rem',fontWeight:600,
+                  fontFamily:"'Lora',serif",cursor:'pointer',transition:'all 0.15s',
+                  background: calInputMode === mode ? '#1a3a2a' : 'white',
+                  color: calInputMode === mode ? 'white' : '#1a3a2a',
+                }}>{label}</button>
+              ))}
+            </div>
+
+            {calInputMode === 'import' && (
+              <div>
+                <p style={{fontSize:'0.82rem',color:'#6b7280',marginBottom:'0.75rem'}}>
+                  Upload your school calendar as a PDF or HTML file. The AI will count school days, excluding holidays and breaks.
+                </p>
+                <label style={{
+                  display:'block',border:'2px dashed rgba(26,58,42,0.3)',borderRadius:10,
+                  padding:'1.5rem',textAlign:'center',cursor:'pointer',
+                  background: calImporting ? '#f4f9f6' : 'white', color:'#1a3a2a',
+                  fontSize:'0.875rem',fontWeight:600
+                }}>
+                  {calImporting
+                    ? <><div className="p-spinner" style={{margin:'0 auto 0.5rem',width:24,height:24,borderWidth:2}} /> Analyzing calendar…</>
+                    : '+ Click to upload PDF or HTML calendar'}
+                  <input type="file" accept=".pdf,.html,.htm" style={{display:'none'}} onChange={handleFileImport} disabled={calImporting} />
+                </label>
+              </div>
+            )}
+
+            {calInputMode === 'estimate' && (
+              <div>
+                <p style={{fontSize:'0.82rem',color:'#6b7280',marginBottom:'0.75rem'}}>
+                  Counts every Monday–Friday from your school year start through today. No holidays are excluded — adjust manually if needed.
+                </p>
+                <button className="p-btn p-btn-outline p-btn-block" onClick={handleEstimate}>
+                  Calculate Mon–Fri Days
+                </button>
+              </div>
+            )}
+
+            {calInputMode === 'manual' && (
+              <div>
+                <div className="p-field-row">
+                  <div className="p-field">
+                    <label>Days Already Completed</label>
+                    <input type="number" min="0" max="175"
+                      value={wizardData.baseDays ?? 0}
+                      onChange={e => setField('baseDays', parseInt(e.target.value) || 0)} />
+                  </div>
+                  <div className="p-field">
+                    <label>Hours Already Logged</label>
+                    <input type="number" min="0" step="0.5"
+                      value={wizardData.baseHours ?? 0}
+                      onChange={e => setField('baseHours', parseFloat(e.target.value) || 0)} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Result card */}
+            {calImportResult && !calImportResult.error && (
+              <div style={{background:'#f4f9f6',border:'1.5px solid #1a3a2a',borderRadius:10,padding:'1rem',marginTop:'1rem'}}>
+                <div style={{fontSize:'0.8rem',fontWeight:700,color:'#1a3a2a',marginBottom:'0.3rem',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                  {calImportResult.source === 'file' ? `Parsed from ${calImportResult.fileName}` : 'Estimated (Mon–Fri only)'}
+                </div>
+                <div style={{fontSize:'1.5rem',fontWeight:700,color:'#1a3a2a'}}>{calImportResult.days} days</div>
+                <div style={{fontSize:'0.8rem',color:'#6b7280',marginTop:'0.2rem'}}>≈ {calImportResult.hours} hours at {wizardData.defaultHoursPerDay || 5.5}h/day</div>
+                <div style={{fontSize:'0.75rem',color:'#6b7280',marginTop:'0.5rem'}}>You can fine-tune these numbers in the manual tab or later in Settings.</div>
+              </div>
+            )}
+            {calImportResult?.error && (
+              <div style={{background:'#fff5f5',border:'1.5px solid #fca5a5',borderRadius:10,padding:'1rem',marginTop:'1rem',fontSize:'0.82rem',color:'#dc2626'}}>
+                <strong>Import error:</strong> {calImportResult.error}
+                <div style={{marginTop:'0.5rem',color:'#6b7280'}}>Try the "Auto-Estimate" or "Enter Manually" tabs instead.</div>
+              </div>
+            )}
+          </div>
+        );
+        case 6: return (
+          <div>
+            <p style={{fontSize:'0.875rem',color:'#6b7280',marginBottom:'1rem'}}>Review your setup and tap Finish to save.</p>
+            <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+              {[
+                ['School Year Start', wizardData.schoolYearStart || '2025-08-25'],
+                ['Hours Per Day', wizardData.defaultHoursPerDay || 5.5],
+                ['Student 1', wizardData.studentName1 || 'Orion'],
+                ['Student 2', wizardData.studentName2 || 'Malachi'],
+                ['Address', wizardData.address || '(not set)'],
+                ['Days to credit', wizardData.baseDays ?? 0],
+                ['Hours to credit', wizardData.baseHours ?? 0],
+              ].map(([label, val]) => (
+                <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.5rem 0.75rem',background:'#f9f8f6',borderRadius:8,fontSize:'0.85rem'}}>
+                  <span style={{color:'#6b7280',fontWeight:600}}>{label}</span>
+                  <span style={{color:'#1a3a2a',fontWeight:700}}>{String(val)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+        default: return null;
+      }
+    };
+
+    const stepTitles = ['','Welcome','School Year','Students','Address','Days Completed','Review & Save'];
+
+    return (
+      <div className="p-modal-overlay">
+        <div className="p-modal" style={{maxWidth:440}} onClick={e => e.stopPropagation()}>
+          {/* Progress */}
+          <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'1rem'}}>
+            {Array.from({length:totalSteps}).map((_,i) => (
+              <div key={i} style={{
+                flex:1,height:4,borderRadius:2,
+                background: i < setupWizardStep ? '#1a3a2a' : '#edecea',
+                transition:'background 0.3s'
+              }} />
+            ))}
+          </div>
+          <div style={{fontSize:'0.7rem',color:'#6b7280',textAlign:'right',marginBottom:'0.75rem'}}>Step {setupWizardStep} of {totalSteps}</div>
+
+          <h2 style={{marginBottom:'1.25rem'}}>{stepTitles[setupWizardStep]}</h2>
+
+          {stepContent()}
+
+          {/* Navigation */}
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:'1.5rem',gap:'0.5rem'}}>
+            <button className="p-btn p-btn-ghost"
+              onClick={() => setupWizardStep > 1 ? setSetupWizardStep(p => p - 1) : setSetupWizardOpen(false)}>
+              {setupWizardStep === 1 ? 'Skip' : '← Back'}
+            </button>
+            {setupWizardStep < totalSteps
+              ? <button className="p-btn p-btn-primary" disabled={!canNext()} onClick={() => setSetupWizardStep(p => p + 1)}>Next →</button>
+              : <button className="p-btn p-btn-green" onClick={handleFinish}>Finish & Save</button>
+            }
           </div>
         </div>
       </div>
@@ -2570,6 +2964,9 @@ export default function Planner() {
 
       {/* New Week Modal */}
       {renderNewWeekModal()}
+
+      {/* Setup Wizard */}
+      {renderSetupWizard()}
 
       {/* Toast */}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
