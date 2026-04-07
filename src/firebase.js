@@ -2,14 +2,13 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
-// Replace with your Firebase project config from Firebase Console → Project Settings → Your apps
 const firebaseConfig = {
-  apiKey: "PASTE_API_KEY_HERE",
-  authDomain: "PASTE_AUTH_DOMAIN_HERE",
-  projectId: "PASTE_PROJECT_ID_HERE",
-  storageBucket: "PASTE_STORAGE_BUCKET_HERE",
-  messagingSenderId: "PASTE_MESSAGING_SENDER_ID_HERE",
-  appId: "PASTE_APP_ID_HERE"
+  apiKey: "AIzaSyBh2sS_pEonxJ4E1e8Z2I2253xAjfntU_Y",
+  authDomain: "iron-light-planner.firebaseapp.com",
+  projectId: "iron-light-planner",
+  storageBucket: "iron-light-planner.firebasestorage.app",
+  messagingSenderId: "970543120163",
+  appId: "1:970543120163:web:a36b0676d3849c6b1b5696"
 };
 
 const app = initializeApp(firebaseConfig);
