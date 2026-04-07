@@ -16,6 +16,7 @@ if (!admin.apps.length) {
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 
 const allowedOrigins = [
+  'https://luxury-youtiao-5cd42c.netlify.app',
   'https://planner.grasphislove.com',
   'https://rewards.grasphislove.com',
   'http://localhost:5173'
