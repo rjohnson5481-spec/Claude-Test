@@ -7,6 +7,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+const APP_VERSION = 'v1.2';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -1862,7 +1863,7 @@ export default function Planner() {
         <button className="p-topbar-menu-btn" onClick={() => setSideMenuOpen(true)} aria-label="Menu">☰</button>
         <div className="p-topbar-center">
           <div className="p-topbar-name">Iron &amp; Light Johnson Academy</div>
-          <div className="p-topbar-tagline">Faith · Knowledge · Strength</div>
+          <div className="p-topbar-tagline">Faith · Knowledge · Strength <span style={{opacity:0.6,marginLeft:'0.3rem'}}>{APP_VERSION}</span></div>
         </div>
         <div className="p-compliance-mini">
           <div className="p-cm-row">
@@ -1913,6 +1914,10 @@ export default function Planner() {
             </button>
           ))}
         </nav>
+        <div style={{padding:'0.75rem 1.25rem',borderTop:'1px solid rgba(0,0,0,0.08)',fontSize:'0.72rem',color:'#9ca3af',display:'flex',justifyContent:'space-between'}}>
+          <span>Iron &amp; Light Planner</span>
+          <span style={{fontWeight:600,color:'#b4a064'}}>{APP_VERSION}</span>
+        </div>
       </aside>
 
       {/* Side Menu Subviews */}
