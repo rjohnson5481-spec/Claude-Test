@@ -1503,7 +1503,10 @@ export default function Planner() {
 
           return (
             <div className="p-card">
-              <div className="p-card-title p-mb1">Extra Subjects</div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.75rem'}}>
+                <div className="p-card-title">Additional Learning</div>
+                <span style={{fontSize:'0.7rem',color:'#b4933a',fontWeight:600,background:'#fef3c7',padding:'0.2rem 0.6rem',borderRadius:'999px',letterSpacing:'0.04em'}}>LOGGED TODAY</span>
+              </div>
 
               {/* Chips row */}
               <div className="p-chips" style={{marginBottom:'0.75rem'}}>
@@ -2401,6 +2404,7 @@ export default function Planner() {
         <button className="p-topbar-menu-btn" onClick={() => setSideMenuOpen(true)} aria-label="Menu">☰</button>
         <div className="p-topbar-center">
           <div className="p-topbar-name">Iron &amp; Light Johnson Academy</div>
+          <div className="p-topbar-tagline">Faith · Knowledge · Strength <span style={{opacity:0.7,marginLeft:'0.3rem'}}>{APP_VERSION}</span></div>
         </div>
         <div className="p-compliance-mini">
           <div className="p-cm-row">
