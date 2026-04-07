@@ -93,6 +93,20 @@ function getYesterdayId() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+function getWeekDateFor(dayName) {
+  const today = new Date();
+  const dows = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const diff = dows.indexOf(dayName) - today.getDay();
+  const d = new Date(today);
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function getDateId(date) {
+  const d = date ? new Date(date) : new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function calcProjectedFinish(daysCompleted) {
   if (daysCompleted === 0) return 'N/A';
   const today = new Date();
@@ -468,7 +482,8 @@ function Toast({ message, onDone }) {
 
 // ─── Chat bubble renderer (handles <button> tags from AI) ────────────────────
 function renderChatBubble(text, onApply) {
-  const parts = text.split(/(<button[^>]*>[\s\S]*?<\/button>)/gi);
+  const displayText = text.replace(/\s*\[APPLY_DATA\][\s\S]*?\[\/APPLY_DATA\]\s*/g, '').trim();
+  const parts = displayText.split(/(<button[^>]*>[\s\S]*?<\/button>)/gi);
   return parts.map((part, i) => {
     const m = part.match(/<button[^>]*>([\s\S]*?)<\/button>/i);
     if (m) {
@@ -529,6 +544,11 @@ export default function Planner() {
   const [showFinalizePanel, setShowFinalizePanel] = useState(false);
   const [resolutions, setResolutions] = useState({});
   const [viewDayOverride, setViewDayOverride] = useState(null);
+  const [viewedDayLog, setViewedDayLog] = useState(null);
+  const [viewedLessonChecks, setViewedLessonChecks] = useState({});
+  const [viewedHoursLogged, setViewedHoursLogged] = useState(5.5);
+  const [viewedDayNotes, setViewedDayNotes] = useState('');
+  const [newCustomSubject, setNewCustomSubject] = useState('');
 
   // Week view
   const [weekReport, setWeekReport] = useState('');
@@ -604,11 +624,13 @@ export default function Planner() {
       if (data.lessons) {
         const checks = {};
         const notes = {};
-        ['orion', 'malachi'].forEach(s => {
-          ['reading', 'math'].forEach(sub => {
+        Object.entries(data.lessons).forEach(([s, subjs]) => {
+          if (typeof subjs !== 'object' || !subjs) return;
+          Object.entries(subjs).forEach(([sub, val]) => {
+            if (typeof val !== 'object' || !val) return;
             const key = `${s}_${sub}`;
-            checks[key] = data.lessons?.[s]?.[sub]?.done || false;
-            notes[key] = data.lessons?.[s]?.[sub]?.notes || '';
+            checks[key] = val.done || false;
+            notes[key] = val.notes || '';
           });
         });
         setLessonChecks(checks);
@@ -694,6 +716,34 @@ export default function Planner() {
     if (chatOpen && chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, chatOpen]);
 
+  // ── Load viewed day log when day override changes ────────────────────────────
+  useEffect(() => {
+    if (!viewDayOverride || authState !== 'authorized') {
+      setViewedDayLog(null);
+      setViewedLessonChecks({});
+      return;
+    }
+    const vDate = getWeekDateFor(viewDayOverride);
+    const vId = getDateId(vDate);
+    const unsub = onSnapshot(doc(db, 'logs', vId), snap => {
+      const data = snap.data() || {};
+      setViewedDayLog({ ...data, _id: vId });
+      const checks = {};
+      if (data.lessons) {
+        Object.entries(data.lessons).forEach(([s, subjs]) => {
+          if (typeof subjs !== 'object' || !subjs) return;
+          Object.entries(subjs).forEach(([sub, val]) => {
+            if (typeof val !== 'object' || !val) return;
+            checks[`${s}_${sub}`] = val.done || false;
+          });
+        });
+      }
+      setViewedLessonChecks(checks);
+      setViewedHoursLogged(data.hoursLogged ?? 5.5);
+      setViewedDayNotes(data.dayNotes || '');
+    });
+    return unsub;
+  }, [viewDayOverride, authState]);
 
   // ── Firestore write helpers ───────────────────────────────────────────────────
   const saveLessonCheck = useCallback(async (student, subject, checked) => {
@@ -1087,18 +1137,6 @@ export default function Planner() {
 
   // ── Render helpers ────────────────────────────────────────────────────────────
 
-  // Get calendar date for a DAYS_OF_WEEK entry within the current week
-  const getWeekDateFor = (dayName) => {
-    const today = new Date();
-    const todayDow = today.getDay(); // 0=Sun
-    const dows = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    const targetDow = dows.indexOf(dayName);
-    const diff = targetDow - todayDow;
-    const d = new Date(today);
-    d.setDate(d.getDate() + diff);
-    return d;
-  };
-
   const renderTodayView = () => {
     const effectiveDay = viewDayOverride || dayOfWeek;
     const isViewingToday = !viewDayOverride;
@@ -1130,46 +1168,142 @@ export default function Planner() {
       </div>
     );
 
-    // If viewing a future/past day (not today): read-only schedule preview
+    // If viewing a future/past day (not today): full editable day log
     if (!isViewingToday) {
+      const vDate = getWeekDateFor(effectiveDay);
+      const vId = getDateId(vDate);
+      const isPast = vDate < new Date(new Date().setHours(0,0,0,0));
+      const vLog = viewedDayLog;
+      const vFinalized = vLog?.finalized;
+      const vStarted = !!vLog?.startedAt;
+      const vIsNoSchool = weekSchedule?.[effectiveDay]?.note === 'No School' || (!weekSchedule?.[effectiveDay] && !vStarted);
+
+      const saveViewedCheck = async (student, subject, checked) => {
+        setViewedLessonChecks(p => ({...p,[`${student}_${subject}`]:checked}));
+        await setDoc(doc(db, 'logs', vId), { lessons: { [student]: { [subject]: { done: checked } } }, startedAt: vLog?.startedAt || new Date() }, { merge: true });
+      };
+      const finalizeViewedDay = async () => {
+        const hours = parseFloat(viewedHoursLogged) || 0;
+        await setDoc(doc(db, 'logs', vId), { finalized: true, finalizedAt: new Date(), hoursLogged: hours, dayNotes: viewedDayNotes }, { merge: true });
+        await setDoc(doc(db, 'compliance', 'nd'), { daysCompleted: (compliance.daysCompleted || 0) + 1, hoursLogged: (compliance.hoursLogged || 0) + hours }, { merge: true });
+        showToast('Day finalized!');
+      };
+      const markViewedNoSchool = async () => {
+        await setDoc(doc(db, 'schedule', weekId), { days: { [effectiveDay]: { note: 'No School' } } }, { merge: true });
+        await setDoc(doc(db, 'logs', vId), { finalized: true, noSchool: true, finalizedAt: new Date() }, { merge: true });
+        showToast(`${effectiveDay} marked as No School.`);
+      };
+      const unmarkViewedNoSchool = async () => {
+        const updatedDays = { ...(weekSchedule || {}), [effectiveDay]: { ...(weekSchedule?.[effectiveDay] || {}), note: null } };
+        await setDoc(doc(db, 'schedule', weekId), { days: { [effectiveDay]: { note: null } } }, { merge: true });
+        showToast(`${effectiveDay} No School mark removed.`);
+      };
+
       return (
         <div>
           {dayNavRow}
           <div className="p-date-header">
-            <h2>{formatDateDisplay(effectiveDate)}</h2>
-            <div className="p-day-num" style={{color:'#b4a064'}}>Preview — not today</div>
+            <h2>{formatDateDisplay(vDate)}</h2>
+            <div className="p-day-num" style={{color: vFinalized ? '#166534' : isPast ? '#dc2626' : '#b4a064'}}>
+              {vFinalized ? (vLog?.noSchool ? 'No School' : '✓ Finalized') : isPast ? 'Incomplete' : 'Upcoming'}
+            </div>
           </div>
-          {isNoSchool ? (
+
+          {/* Quick actions */}
+          <div style={{display:'flex',gap:'0.5rem',marginBottom:'1rem',flexWrap:'wrap'}}>
+            {!vIsNoSchool && !vFinalized && (
+              <button className="p-btn p-btn-ghost p-btn-sm" onClick={markViewedNoSchool}>Mark as No School</button>
+            )}
+            {(vIsNoSchool || vLog?.noSchool) && !vFinalized && (
+              <button className="p-btn p-btn-ghost p-btn-sm" onClick={unmarkViewedNoSchool}>Remove No School</button>
+            )}
+          </div>
+
+          {vIsNoSchool || vLog?.noSchool ? (
             <div className="p-no-school-banner">
               <strong>No School</strong>
+              {vLog?.noSchool && <p style={{marginTop:'0.5rem',fontSize:'0.82rem',color:'#9ca3af'}}>Marked as no school — not counted in compliance.</p>}
             </div>
           ) : (
-            <div className="p-students-grid">
-              {['orion', 'malachi'].map(student => {
-                const std = ['reading','math'];
-                const extra = Object.keys(daySchedule?.[student] || {}).filter(k => !std.includes(k) && typeof (daySchedule?.[student]?.[k]) === 'string' && daySchedule[student][k]);
-                const subjects = [...std, ...extra];
-                return (
-                  <div key={student} className="p-student-card">
-                    <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
-                    <div className="p-student-body">
-                      {subjects.map(subject => {
-                        const lesson = daySchedule?.[student]?.[subject];
-                        if (!lesson) return null;
-                        return (
-                          <div key={subject} className="p-lesson-row">
-                            <div className="p-lesson-subject">{subject}</div>
-                            <div className="p-lesson-text" style={{fontSize:'0.85rem',marginTop:'0.15rem',color:'#2c2c2c'}}>
-                              {lesson}
+            <>
+              {/* Lesson cards with checkboxes */}
+              <div className="p-students-grid">
+                {['orion', 'malachi'].map(student => {
+                  const std = ['reading','math'];
+                  const extra = Object.keys(daySchedule?.[student] || {}).filter(k => !std.includes(k) && typeof (daySchedule?.[student]?.[k]) === 'string' && daySchedule[student][k]);
+                  const subjects = [...std, ...extra];
+                  return (
+                    <div key={student} className="p-student-card">
+                      <div className="p-student-header">{student === 'orion' ? appSettings.studentName1 || 'Orion' : appSettings.studentName2 || 'Malachi'}</div>
+                      <div className="p-student-body">
+                        {subjects.map(subject => {
+                          const lesson = daySchedule?.[student]?.[subject];
+                          if (!lesson) return null;
+                          const key = `${student}_${subject}`;
+                          return (
+                            <div key={subject} className="p-lesson-row">
+                              <div className="p-lesson-check-row">
+                                <input
+                                  type="checkbox"
+                                  checked={!!viewedLessonChecks[key]}
+                                  onChange={e => saveViewedCheck(student, subject, e.target.checked)}
+                                />
+                                <div className="p-lesson-label">
+                                  <div className="p-lesson-subject">{subject}</div>
+                                  <div className="p-lesson-text">{lesson}</div>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                        {subjects.length === 0 && <div style={{fontSize:'0.82rem',color:'#9ca3af',padding:'0.5rem 0'}}>No lessons scheduled</div>}
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+
+              {/* Hours + Notes */}
+              <div className="p-card">
+                <div className="p-field-row">
+                  <div className="p-field" style={{flex:3}}>
+                    <label>Day Notes</label>
+                    <textarea
+                      value={viewedDayNotes}
+                      placeholder="Notes for this day..."
+                      onChange={e => setViewedDayNotes(e.target.value)}
+                      onBlur={async e => { await setDoc(doc(db, 'logs', vId), { dayNotes: e.target.value }, { merge: true }); }}
+                    />
                   </div>
-                );
-              })}
-            </div>
+                  <div className="p-field" style={{flex:1}}>
+                    <label>Hours Logged</label>
+                    <input
+                      type="number" step="0.5" min="0" max="24"
+                      value={viewedHoursLogged}
+                      onChange={e => setViewedHoursLogged(e.target.value)}
+                      onBlur={async e => { await setDoc(doc(db, 'logs', vId), { hoursLogged: parseFloat(e.target.value) || 0 }, { merge: true }); }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {!vFinalized ? (
+                <div style={{textAlign:'center',marginBottom:'1rem'}}>
+                  <button className="p-btn p-btn-primary p-btn-lg" onClick={finalizeViewedDay}>
+                    Finalize {effectiveDay}
+                  </button>
+                </div>
+              ) : (
+                <div style={{textAlign:'center',padding:'1rem',background:'#dcfce7',borderRadius:'10px',marginBottom:'1rem'}}>
+                  <span style={{color:'#166534',fontWeight:600}}>✓ {effectiveDay} finalized</span>
+                  <button
+                    className="p-btn p-btn-ghost p-btn-sm"
+                    style={{marginLeft:'1rem'}}
+                    onClick={async () => { await setDoc(doc(db, 'logs', vId), { finalized: false }, { merge: true }); showToast('Finalization removed.'); }}
+                  >Undo</button>
+                </div>
+              )}
+            </>
           )}
         </div>
       );
@@ -1301,7 +1435,11 @@ export default function Planner() {
         <div className="p-card">
           <div className="p-card-title p-mb1">Extra Subjects</div>
           <div className="p-chips">
-            {[['science','Science'],['history','History'],['bible','Bible / Faith']].map(([key,label]) => (
+            {[
+              ['science','Science'],['history','History'],['bible','Bible / Faith'],
+              ['handwriting','Handwriting'],['grammar','English Grammar'],['spelling','Spelling'],
+              ...((appSettings.customSubjects || []).map(s => [s.toLowerCase().replace(/\s+/g,'_'), s]))
+            ].map(([key,label]) => (
               <button
                 key={key}
                 className={`p-chip${extraSubjects[key] ? ' active' : ''}`}
@@ -1309,7 +1447,11 @@ export default function Planner() {
               >{label}</button>
             ))}
           </div>
-          {[['science','Science'],['history','History'],['bible','Bible / Faith']].map(([key,label]) => extraSubjects[key] && (
+          {[
+            ['science','Science'],['history','History'],['bible','Bible / Faith'],
+            ['handwriting','Handwriting'],['grammar','English Grammar'],['spelling','Spelling'],
+            ...((appSettings.customSubjects || []).map(s => [s.toLowerCase().replace(/\s+/g,'_'), s]))
+          ].map(([key,label]) => extraSubjects[key] && (
             <div key={key} className="p-extra-panel">
               <strong style={{fontSize:'0.8rem',color:'#1a3a2a'}}>{label}</strong>
               <div style={{marginTop:'0.5rem'}}>
@@ -1331,6 +1473,33 @@ export default function Planner() {
               </div>
             </div>
           ))}
+          <div style={{display:'flex',gap:'0.5rem',marginTop:'0.5rem',alignItems:'center'}}>
+            <input
+              type="text"
+              placeholder="Add subject..."
+              value={newCustomSubject}
+              onChange={e => setNewCustomSubject(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && newCustomSubject.trim()) {
+                  const updated = [...(appSettings.customSubjects || []), newCustomSubject.trim()];
+                  setAppSettings(p => ({...p, customSubjects: updated}));
+                  setDoc(doc(db, 'settings', 'app'), { customSubjects: updated }, { merge: true });
+                  setNewCustomSubject('');
+                }
+              }}
+              style={{flex:1,padding:'0.35rem 0.6rem',fontFamily:'inherit',fontSize:'0.8rem',border:'1px solid rgba(0,0,0,0.12)',borderRadius:'6px',outline:'none'}}
+            />
+            <button
+              className="p-btn p-btn-outline p-btn-sm"
+              onClick={() => {
+                if (!newCustomSubject.trim()) return;
+                const updated = [...(appSettings.customSubjects || []), newCustomSubject.trim()];
+                setAppSettings(p => ({...p, customSubjects: updated}));
+                setDoc(doc(db, 'settings', 'app'), { customSubjects: updated }, { merge: true });
+                setNewCustomSubject('');
+              }}
+            >+ Add</button>
+          </div>
         </div>
 
         {/* Day Notes + Hours */}
