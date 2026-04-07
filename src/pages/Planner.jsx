@@ -1649,8 +1649,16 @@ export default function Planner() {
           </div>
         )}
         {todayLog?.finalized && (
-          <div style={{textAlign:'center',padding:'1rem',background:'#dcfce7',borderRadius:'10px',marginBottom:'1rem'}}>
+          <div style={{textAlign:'center',padding:'1rem',background:'#dcfce7',borderRadius:'12px',marginBottom:'1rem',display:'flex',alignItems:'center',justifyContent:'center',gap:'1rem',flexWrap:'wrap'}}>
             <span style={{color:'#166534',fontWeight:600}}>✓ Day finalized</span>
+            <button
+              className="p-btn p-btn-outline p-btn-sm"
+              style={{borderColor:'#166534',color:'#166534'}}
+              onClick={async () => {
+                await setDoc(doc(db, 'logs', todayId), { finalized: false }, { merge: true });
+                showToast('Day unfinalized — make your edits.');
+              }}
+            >Unfinalize</button>
           </div>
         )}
 
