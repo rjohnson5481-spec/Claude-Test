@@ -2327,7 +2327,7 @@ export default function Planner() {
     const firstDay = new Date(cur.year, cur.month, 1).getDay();
     const daysInMonth = new Date(cur.year, cur.month + 1, 0).getDate();
     const today = new Date(); today.setHours(0,0,0,0);
-    const schoolStart = new Date('2025-08-25'); schoolStart.setHours(0,0,0,0);
+    const schoolStart = new Date(appSettings.schoolYearStart || '2025-08-25'); schoolStart.setHours(0,0,0,0);
 
     const cells = [];
     for (let i = 0; i < firstDay; i++) cells.push(null);
