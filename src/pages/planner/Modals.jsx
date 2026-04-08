@@ -3,7 +3,7 @@ import { db } from '../../firebase.js';
 import { doc, setDoc } from 'firebase/firestore';
 import { usePlanner } from './PlannerContext';
 import { DAYS_OF_WEEK, SEED_SCHEDULE } from './constants';
-import { formatShortDate, getWeekOffsetForDate, getWeekIdWithOffset } from './helpers';
+import { formatShortDate, getWeekOffsetForDate, getWeekIdWithOffset, getDayOfWeek } from './helpers';
 
 export function AttendanceCalendar() {
   const {
@@ -11,7 +11,7 @@ export function AttendanceCalendar() {
     calMonthIdx, setCalMonthIdx, calPopup, setCalPopup,
     setWeekOffset, setViewDayOverride, setSpecificDate,
     setActiveTab, setSideMenuView, setSideMenuOpen,
-    showToast,
+    setSickDayShiftOffer, showToast,
   } = usePlanner();
 
   const months = [];
@@ -88,6 +88,13 @@ export function AttendanceCalendar() {
     }
     setCalPopup(null);
     showToast(`Day marked as ${type === 'sick' ? 'Sick Day' : type === 'off' ? 'Day Off' : 'No School'}.`);
+    // Offer to shift remaining lessons forward for sick/off days
+    if (type === 'sick' || type === 'off') {
+      const dayName = getDayOfWeek(new Date(dateStr + 'T12:00:00'));
+      if (DAYS_OF_WEEK.includes(dayName)) {
+        setSickDayShiftOffer({ dateStr, dayName });
+      }
+    }
   };
 
   const navigateToDay = (dateStr) => {
@@ -254,6 +261,166 @@ export function ConfirmDialog() {
         <div className="p-modal-actions">
           <button className="p-btn p-btn-ghost" onClick={() => setConfirmDialog(null)}>Cancel</button>
           <button className="p-btn p-btn-primary" onClick={applyScheduleDialog}>Apply to Schedule →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Shift Days Modal (standalone from WeekView) ───────────────────────────────
+export function ShiftDaysModal() {
+  const { shiftDaysModal, setShiftDaysModal, weekSchedule, shiftSchedule } = usePlanner();
+  const [fromDay, setFromDay] = React.useState('Monday');
+  const [numDays, setNumDays] = React.useState(1);
+
+  React.useEffect(() => {
+    if (shiftDaysModal) {
+      setFromDay(shiftDaysModal.fromDay || 'Monday');
+      setNumDays(shiftDaysModal.numDays || 1);
+    }
+  }, [shiftDaysModal]);
+
+  if (!shiftDaysModal) return null;
+
+  const fromIdx = DAYS_OF_WEEK.indexOf(fromDay);
+  const sourceDays = DAYS_OF_WEEK.slice(fromIdx);
+  const preview = sourceDays.map((day, i) => {
+    const targetIdx = fromIdx + i + numDays;
+    const target = targetIdx < 5 ? DAYS_OF_WEEK[targetIdx] : `${DAYS_OF_WEEK[targetIdx - 5]} (next week)`;
+    const hasLessons = weekSchedule?.[day] && !weekSchedule[day].note;
+    return { day, target, hasLessons };
+  }).filter(p => p.hasLessons);
+
+  return (
+    <div className="p-modal-overlay" onClick={() => setShiftDaysModal(null)}>
+      <div className="p-modal" onClick={e => e.stopPropagation()} style={{maxWidth:380}}>
+        <h2>Shift Schedule Forward</h2>
+        <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+          Move lessons from a given day forward by N school days.
+        </p>
+        <div className="p-field-row" style={{marginBottom:'1rem'}}>
+          <div className="p-field">
+            <label>Starting from</label>
+            <select value={fromDay} onChange={e => setFromDay(e.target.value)}>
+              {DAYS_OF_WEEK.map(d => <option key={d}>{d}</option>)}
+            </select>
+          </div>
+          <div className="p-field">
+            <label>Shift by (days)</label>
+            <input type="number" min="1" max="4" value={numDays}
+              onChange={e => setNumDays(Math.max(1, Math.min(4, parseInt(e.target.value) || 1)))} />
+          </div>
+        </div>
+        {preview.length > 0 && (
+          <div className="p-card" style={{marginBottom:'1rem',background:'var(--bg-card-warm)'}}>
+            <div style={{fontSize:'0.78rem',fontWeight:600,color:'var(--text-secondary)',marginBottom:'0.4rem'}}>Preview</div>
+            {preview.map(({day, target}) => (
+              <div key={day} style={{fontSize:'0.83rem',padding:'0.2rem 0',borderBottom:'1px solid var(--border)'}}>
+                <span style={{color:'var(--text-muted)'}}>{day}</span>
+                <span style={{margin:'0 0.4rem',color:'var(--forest)'}}>→</span>
+                <span style={{fontWeight:500}}>{target}</span>
+                {target.includes('next week') && <span style={{marginLeft:'0.4rem',fontSize:'0.75rem',color:'var(--gold)'}}>⚠ confirm</span>}
+              </div>
+            ))}
+            {preview.length === 0 && <div style={{fontSize:'0.82rem',color:'var(--text-muted)'}}>No lessons to shift in that range.</div>}
+          </div>
+        )}
+        <div className="p-modal-actions">
+          <button className="p-btn p-btn-ghost" onClick={() => setShiftDaysModal(null)}>Cancel</button>
+          <button className="p-btn p-btn-primary" onClick={() => shiftSchedule(fromDay, numDays)}>
+            Shift Schedule →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Shift Overflow Dialog (confirm next-week write) ───────────────────────────
+export function ShiftOverflowDialog() {
+  const { shiftOverflowDialog, setShiftOverflowDialog, shiftSchedule } = usePlanner();
+  if (!shiftOverflowDialog) return null;
+  const { currentWeekUpdates, overflow } = shiftOverflowDialog;
+
+  const handleConfirm = () => shiftSchedule(null, null, true);
+  // Re-apply with confirmedOverflow=true using stored updates
+  const handleConfirmDirect = async () => {
+    const { db } = await import('../../firebase.js');
+    const { doc, setDoc, updateDoc } = await import('firebase/firestore');
+    const { pendingWeekId, overflow: ov } = shiftOverflowDialog;
+    // Apply current week
+    await setDoc(doc(db, 'schedule', pendingWeekId), {}, { merge: true });
+    for (const [path, val] of Object.entries(currentWeekUpdates)) {
+      await updateDoc(doc(db, 'schedule', pendingWeekId), { [path]: val });
+    }
+    // Apply next week
+    const nextWeekIdWithOffset = (wid) => {
+      // Parse weekId "YYYY-WW" and add 1 week
+      const [y, w] = wid.split('-').map(Number);
+      const d = new Date(y, 0, 1 + (w - 1) * 7);
+      d.setDate(d.getDate() + 7);
+      const jan1 = new Date(d.getFullYear(), 0, 1);
+      const nw = Math.ceil((((d - jan1) / 86400000) + jan1.getDay() + 1) / 7);
+      return `${d.getFullYear()}-${String(nw).padStart(2, '0')}`;
+    };
+    const nextWid = nextWeekIdWithOffset(pendingWeekId);
+    for (const { day, data } of ov) {
+      await setDoc(doc(db, 'schedule', nextWid), { days: { [day]: data } }, { merge: true });
+    }
+    setShiftOverflowDialog(null);
+  };
+
+  return (
+    <div className="p-modal-overlay" onClick={() => setShiftOverflowDialog(null)}>
+      <div className="p-modal" onClick={e => e.stopPropagation()} style={{maxWidth:360}}>
+        <h2>Overflow to Next Week</h2>
+        <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'0.75rem'}}>
+          These lessons would move into next week's schedule:
+        </p>
+        <div className="p-card" style={{marginBottom:'1rem',background:'var(--bg-card-warm)'}}>
+          {overflow.map(({ day, data }, i) => {
+            const subjects = data ? Object.entries(data).flatMap(([student, subjs]) =>
+              typeof subjs === 'object' && subjs && !subjs.note
+                ? Object.entries(subjs).map(([sub]) => `${student.charAt(0).toUpperCase() + student.slice(1)}: ${sub}`)
+                : []
+            ) : [];
+            return (
+              <div key={i} style={{padding:'0.3rem 0',borderBottom:'1px solid var(--border)',fontSize:'0.83rem'}}>
+                <span style={{fontWeight:600,color:'var(--forest)'}}>{day}</span>
+                {subjects.length > 0 && <span style={{color:'var(--text-secondary)',marginLeft:'0.4rem'}}>({subjects.join(', ')})</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div className="p-modal-actions">
+          <button className="p-btn p-btn-ghost" onClick={() => setShiftOverflowDialog(null)}>Cancel Shift</button>
+          <button className="p-btn p-btn-primary" onClick={handleConfirmDirect}>Confirm &amp; Apply →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sick Day Shift Offer (appears after marking sick/off) ─────────────────────
+export function SickDayShiftOffer() {
+  const { sickDayShiftOffer, setSickDayShiftOffer, shiftSchedule } = usePlanner();
+  if (!sickDayShiftOffer) return null;
+  const { dayName } = sickDayShiftOffer;
+
+  return (
+    <div className="p-modal-overlay" onClick={() => setSickDayShiftOffer(null)}>
+      <div className="p-modal" onClick={e => e.stopPropagation()} style={{maxWidth:340}}>
+        <h2>Shift Lessons Forward?</h2>
+        <p style={{fontSize:'0.875rem',color:'var(--text-secondary)',marginBottom:'1.25rem'}}>
+          Move <strong>{dayName}'s</strong> lessons and the rest of this week forward by 1 school day?
+        </p>
+        <div style={{display:'flex',flexDirection:'column',gap:'0.6rem'}}>
+          <button className="p-btn p-btn-primary p-btn-block" onClick={() => shiftSchedule(dayName, 1)}>
+            Yes, Shift 1 Day →
+          </button>
+          <button className="p-btn p-btn-ghost p-btn-block" onClick={() => setSickDayShiftOffer(null)}>
+            Skip — I'll handle it manually
+          </button>
         </div>
       </div>
     </div>

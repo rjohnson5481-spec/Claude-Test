@@ -19,7 +19,7 @@ import WeekView from './planner/WeekView';
 import HistoryView from './planner/HistoryView';
 import SetupWizard from './planner/SetupWizard';
 import { PortfoliosView, MemoryWorkView, NDComplianceView, SettingsView } from './planner/SideMenuViews';
-import { AttendanceCalendar, NewWeekModal, ConfirmDialog } from './planner/Modals';
+import { AttendanceCalendar, NewWeekModal, ConfirmDialog, ShiftDaysModal, ShiftOverflowDialog, SickDayShiftOffer } from './planner/Modals';
 
 export default function Planner() {
   // Auth
@@ -125,6 +125,11 @@ export default function Planner() {
   const [calChatLoading, setCalChatLoading] = useState(false);
   const calChatEndRef = useRef(null);
   const calFileInputRef = useRef(null);
+
+  // Schedule shifting
+  const [shiftDaysModal, setShiftDaysModal] = useState(null);       // { fromDay, numDays }
+  const [shiftOverflowDialog, setShiftOverflowDialog] = useState(null); // { currentWeekUpdates, overflow, pendingWeekId }
+  const [sickDayShiftOffer, setSickDayShiftOffer] = useState(null); // { dateStr, dayName }
 
   // Toast
   const [toast, setToast] = useState(null);
@@ -835,6 +840,62 @@ export default function Planner() {
     }
   };
 
+  // ── Shift schedule forward ────────────────────────────────────────────────────
+  const shiftSchedule = async (fromDay, numDays, confirmedOverflow = false) => {
+    if (!weekSchedule) return;
+    const fromIdx = DAYS_OF_WEEK.indexOf(fromDay);
+    if (fromIdx === -1) return;
+    const sourceDays = DAYS_OF_WEEK.slice(fromIdx);
+    const sourceData = {};
+    sourceDays.forEach(d => { sourceData[d] = weekSchedule[d] || null; });
+
+    const currentWeekUpdates = {};
+    const overflow = [];
+
+    // Clear the vacated leading slots (nothing lands on them)
+    for (let i = 0; i < Math.min(numDays, sourceDays.length); i++) {
+      currentWeekUpdates[`days.${sourceDays[i]}`] = {};
+    }
+
+    // Assign each source day to its shifted target
+    sourceDays.forEach((day, i) => {
+      const targetIdx = fromIdx + i + numDays;
+      if (targetIdx < 5) {
+        currentWeekUpdates[`days.${DAYS_OF_WEEK[targetIdx]}`] = sourceData[day] || {};
+      } else {
+        const nextIdx = targetIdx - 5;
+        if (nextIdx < 5 && sourceData[day]) {
+          overflow.push({ day: DAYS_OF_WEEK[nextIdx], data: sourceData[day] });
+        }
+      }
+    });
+
+    // If overflow exists and not yet confirmed, pause and show dialog
+    if (overflow.length > 0 && !confirmedOverflow) {
+      setShiftOverflowDialog({ currentWeekUpdates, overflow, pendingWeekId: weekId });
+      return;
+    }
+
+    // Apply current-week updates
+    await setDoc(doc(db, 'schedule', weekId), {}, { merge: true });
+    for (const [path, val] of Object.entries(currentWeekUpdates)) {
+      await updateDoc(doc(db, 'schedule', weekId), { [path]: val });
+    }
+
+    // Apply next-week overflow
+    if (overflow.length > 0) {
+      const nextWeekId = getWeekIdWithOffset(weekOffset + 1);
+      for (const { day, data } of overflow) {
+        await setDoc(doc(db, 'schedule', nextWeekId), { days: { [day]: data } }, { merge: true });
+      }
+    }
+
+    setShiftDaysModal(null);
+    setSickDayShiftOffer(null);
+    setShiftOverflowDialog(null);
+    showToast(`Schedule shifted forward ${numDays} day${numDays !== 1 ? 's' : ''}.`);
+  };
+
   // ── Render helpers ────────────────────────────────────────────────────────────
 
   // ── Main render ────────────────────────────────────────────────────────────────
@@ -886,6 +947,10 @@ export default function Planner() {
     handleApplyFromChat, sendChatMessage, generateWeekReport,
     downloadPDF, archiveAsHTML, applyScheduleDialog, generateNDReport,
     parseCalendarWithAI, saveWizardData, sendCalendarMessage, extractFileContent,
+    shiftDaysModal, setShiftDaysModal,
+    shiftOverflowDialog, setShiftOverflowDialog,
+    sickDayShiftOffer, setSickDayShiftOffer,
+    shiftSchedule,
     showToast,
   };
 
@@ -1034,6 +1099,9 @@ export default function Planner() {
         <ConfirmDialog />
         <NewWeekModal />
         <SetupWizard />
+        <ShiftDaysModal />
+        <ShiftOverflowDialog />
+        <SickDayShiftOffer />
         {toast && <Toast message={toast} onDone={() => setToast(null)} />}
       </div>
     </PlannerContext.Provider>

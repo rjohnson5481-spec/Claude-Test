@@ -12,7 +12,7 @@ export default function WeekView() {
     weekNotes, setWeekNotes, weekReport, generatingReport,
     weekId, fileInputRef, setPendingImages, setChatInput, setChatOpen,
     generateWeekReport, downloadPDF, archiveAsHTML, saveToArchive, saveWeekNotes,
-    showToast,
+    setShiftDaysModal, showToast,
   } = usePlanner();
 
   const toggleDay = (day) => setExpandedDays(p => ({ ...p, [day]: !p[day] }));
@@ -69,6 +69,9 @@ export default function WeekView() {
             }
             e.target.value = '';
           }} />
+          <button className="p-btn p-btn-outline p-btn-sm" onClick={() => setShiftDaysModal({ fromDay: getDayOfWeek(), numDays: 1 })}>
+            ⟳ Shift Days
+          </button>
           <button className="p-btn p-btn-primary p-btn-sm" onClick={generateWeekReport} disabled={generatingReport}>
             {generatingReport ? 'Generating…' : 'Generate Report'}
           </button>
