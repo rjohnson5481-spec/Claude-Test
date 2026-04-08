@@ -2,6 +2,9 @@
   command = "npm run build"
   publish = "dist"
 
+[build.environment]
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyCN3KzbnwwS1CwrDMIGujqPtAxmD9x7MPE"
+
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
