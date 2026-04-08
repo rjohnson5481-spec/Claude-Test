@@ -7,7 +7,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v2.4';
+const APP_VERSION = 'v2.5';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -210,6 +210,14 @@ async function extractFileContent(file) {
     reader.onerror = rej;
     reader.readAsText(file);
   });
+}
+
+function getWeekOffsetForDate(dateStr) {
+  const targetWeekId = getWeekId(new Date(dateStr + 'T00:00:00'));
+  for (let o = -60; o <= 8; o++) {
+    if (getWeekIdWithOffset(o) === targetWeekId) return o;
+  }
+  return 0;
 }
 
 function estimateSchoolDays(startDateStr) {
@@ -1439,102 +1447,13 @@ export default function Planner() {
   // ── Render helpers ────────────────────────────────────────────────────────────
 
   const renderTodayView = () => {
-    // ── Calendar date override (from tapping a day in the attendance calendar) ──
-    if (specificDate) {
-      const sdLog = specificDateLog || {};
-      const sdDate = new Date(specificDate + 'T00:00:00');
-      const sdFinalized = sdLog.finalized;
-      const sdHours = sdLog.hoursLogged ?? (parseFloat(appSettings.defaultHoursPerDay) || 5.5);
-
-      const saveSDCheck = async (student, subject, checked) => {
-        await setDoc(doc(db, 'logs', specificDate), { lessons: { [student]: { [subject]: { done: checked } } }, startedAt: sdLog.startedAt || new Date() }, { merge: true });
-        setSpecificDateLog(p => ({ ...p, lessons: { ...(p?.lessons||{}), [student]: { ...(p?.lessons?.[student]||{}), [subject]: { ...(p?.lessons?.[student]?.[subject]||{}), done: checked } } } }));
-      };
-      const saveSDNote = async (student, subject, note) => {
-        await setDoc(doc(db, 'logs', specificDate), { lessons: { [student]: { [subject]: { notes: note } } } }, { merge: true });
-      };
-      const finalizeSD = async () => {
-        await setDoc(doc(db, 'logs', specificDate), { finalized: true, finalizedAt: new Date(), hoursLogged: sdHours }, { merge: true });
-        await setDoc(doc(db, 'compliance', 'nd'), { daysCompleted: (compliance.daysCompleted||0)+1, hoursLogged: (compliance.hoursLogged||0)+sdHours }, { merge: true });
-        setSpecificDateLog(p => ({ ...p, finalized: true }));
-        setAllLogs(p => ({ ...p, [specificDate]: { ...(p[specificDate]||{}), finalized: true, hoursLogged: sdHours } }));
-        showToast('Day finalized!');
-      };
-
-      // Determine which week this date is in to get its schedule
-      const sdDayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][sdDate.getDay()];
-      const sdWeekId = getWeekId(sdDate);
-
-      return (
-        <div>
-          <button className="p-btn p-btn-ghost p-btn-sm" style={{marginBottom:'0.75rem'}} onClick={() => { setSpecificDate(null); setSideMenuView('attendance'); setSideMenuOpen(true); }}>
-            ← Back to Calendar
-          </button>
-          <div className="p-date-header">
-            <h2>{formatDateDisplay(sdDate)}</h2>
-            <div className="p-day-num" style={{color: sdFinalized ? '#166534' : '#b4a064'}}>
-              {sdFinalized ? '✓ Finalized' : 'Not yet finalized'}
-            </div>
-          </div>
-
-          {sdLog.noSchool ? (
-            <div className="p-no-school-banner"><strong>No School</strong></div>
-          ) : sdLog.sickDay ? (
-            <div className="p-no-school-banner" style={{background:'#dbeafe',color:'#1e40af'}}><strong>Sick Day</strong> — logged as a school day</div>
-          ) : sdLog.dayOff ? (
-            <div className="p-no-school-banner"><strong>Day Off</strong></div>
-          ) : (
-            <>
-              <div className="p-card">
-                <div className="p-card-title p-mb1">Lessons</div>
-                <div className="p-students-grid">
-                  {['orion','malachi'].map(student => {
-                    const name = student === 'orion' ? appSettings.studentName1||'Orion' : appSettings.studentName2||'Malachi';
-                    return (
-                      <div key={student} className="p-student-card">
-                        <div className="p-student-header">{name}</div>
-                        <div className="p-student-body">
-                          {['reading','math'].map(subject => {
-                            const key = `${student}_${subject}`;
-                            const done = sdLog.lessons?.[student]?.[subject]?.done || false;
-                            return (
-                              <div key={subject} className="p-lesson-row">
-                                <div className="p-lesson-check-row">
-                                  <input type="checkbox" checked={done} onChange={e => saveSDCheck(student, subject, e.target.checked)} style={{width:18,height:18,accentColor:'#1a3a2a',flexShrink:0}} />
-                                  <div className="p-lesson-label">
-                                    <div className="p-lesson-subject">{subject}</div>
-                                  </div>
-                                </div>
-                                <textarea className="p-lesson-notes" placeholder="Notes…"
-                                  defaultValue={sdLog.lessons?.[student]?.[subject]?.notes || ''}
-                                  onBlur={e => saveSDNote(student, subject, e.target.value)} />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="p-card">
-                <div className="p-field">
-                  <label>Hours Logged</label>
-                  <input type="number" step="0.5" min="0" defaultValue={sdHours}
-                    onBlur={async e => { await setDoc(doc(db, 'logs', specificDate), { hoursLogged: parseFloat(e.target.value)||0 }, { merge: true }); }} />
-                </div>
-                {sdLog.dayNotes && <div style={{fontSize:'0.85rem',color:'#6b7280',marginTop:'0.5rem'}}>{sdLog.dayNotes}</div>}
-              </div>
-
-              {!sdFinalized && (
-                <button className="p-btn p-btn-green p-btn-block" onClick={finalizeSD}>Finalize This Day</button>
-              )}
-            </>
-          )}
-        </div>
-      );
-    }
+    // Back-to-calendar banner (set when navigating here from attendance calendar)
+    const calBackBanner = specificDate ? (
+      <button className="p-btn p-btn-ghost p-btn-sm" style={{marginBottom:'0.75rem'}}
+        onClick={() => { setSpecificDate(null); setViewDayOverride(null); setSideMenuView('attendance'); setSideMenuOpen(true); }}>
+        ← Back to Calendar
+      </button>
+    ) : null;
 
     const effectiveDay = viewDayOverride || dayOfWeek;
     const isViewingToday = !viewDayOverride;
@@ -1599,6 +1518,7 @@ export default function Planner() {
 
       return (
         <div>
+          {calBackBanner}
           {dayNavRow}
           <div className="p-date-header">
             <h2>{formatDateDisplay(vDate)}</h2>
@@ -2404,7 +2324,12 @@ export default function Planner() {
     };
 
     const navigateToDay = (dateStr) => {
-      setSpecificDate(dateStr);
+      const dt = new Date(dateStr + 'T00:00:00');
+      const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dt.getDay()];
+      const offset = getWeekOffsetForDate(dateStr);
+      setWeekOffset(offset);
+      setViewDayOverride(dayName);
+      setSpecificDate(dateStr); // just used for the back-button banner
       setActiveTab('today');
       setSideMenuView(null);
       setSideMenuOpen(false);
