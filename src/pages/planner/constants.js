@@ -1,5 +1,5 @@
 // ─── App Constants ─────────────────────────────────────────────────────────────
-export const APP_VERSION = 'v2.7';
+export const APP_VERSION = 'v3.0';
 export const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 export const SCHOOL_YEAR_START = new Date('2025-08-25');
 export const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
