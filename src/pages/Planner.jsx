@@ -7,7 +7,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v2.3';
+const APP_VERSION = 'v2.4';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -461,6 +461,7 @@ const styles = `
 .p-cal-day.off { background: #f3f4f6; color: #6b7280; cursor: pointer; }
 .p-cal-day.missing { background: #fee2e2; color: #991b1b; font-weight: 600; cursor: pointer; }
 .p-cal-day.missing:hover { background: #fecaca; }
+.p-cal-day.preapp { background: #f3f4f6; color: #c4c4c4; font-style: italic; }
 .p-cal-legend { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
 .p-cal-legend-item { display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; color: #6b7280; }
 .p-cal-legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
@@ -1362,6 +1363,8 @@ export default function Planner() {
         if (name.trim()) settingsUpdate[`studentName${i + 3}`] = name.trim();
       });
     }
+    // Save today as tracking start — days before this won't be flagged as missing
+    settingsUpdate.trackingStartDate = getTodayId();
     if (Object.keys(settingsUpdate).length > 0) {
       await setDoc(doc(db, 'settings', 'app'), settingsUpdate, { merge: true });
     }
@@ -2329,6 +2332,18 @@ export default function Planner() {
     const today = new Date(); today.setHours(0,0,0,0);
     const schoolStart = new Date(appSettings.schoolYearStart || '2025-08-25'); schoolStart.setHours(0,0,0,0);
 
+    // Days before trackingStartDate are "pre-app" (covered by baseDays) — don't flag as missing.
+    // Fall back to earliest log entry date, then today, if trackingStartDate not set.
+    const trackingStart = (() => {
+      if (appSettings.trackingStartDate) return new Date(appSettings.trackingStartDate + 'T00:00:00');
+      const logDates = Object.keys(allLogs).sort();
+      if (logDates.length > 0) return new Date(logDates[0] + 'T00:00:00');
+      return today;
+    })();
+    trackingStart.setHours(0,0,0,0);
+    // The calendar only flags missing from the later of schoolStart and trackingStart
+    const missingFrom = trackingStart > schoolStart ? trackingStart : schoolStart;
+
     const cells = [];
     for (let i = 0; i < firstDay; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) cells.push(d);
@@ -2343,7 +2358,7 @@ export default function Planner() {
       if (dt > today) return 'future';
       if (dt < schoolStart) return 'future'; // before school year
       const log = allLogs[dateKey(d)];
-      if (!log) return 'missing';
+      if (!log) return dt < missingFrom ? 'preapp' : 'missing';
       if (log.noSchool || log.note === 'No School') return 'noschool';
       if (log.sickDay) return 'sick';
       if (log.dayOff) return 'off';
@@ -2358,7 +2373,7 @@ export default function Planner() {
       const key = dateKey(d);
       const dt = new Date(cur.year, cur.month, d); dt.setHours(0,0,0,0);
       if (dt > today) return;
-      if (dt < schoolStart) return;
+      if (dt < schoolStart || getDayStatus(d) === 'preapp') return;
       const dow = new Date(cur.year, cur.month, d).getDay();
       if (dow === 0 || dow === 6) return;
       const status = getDayStatus(d);
@@ -2414,7 +2429,7 @@ export default function Planner() {
 
         {/* Legend */}
         <div className="p-cal-legend">
-          {[['#dcfce7','Finalized'],['#fef3c7','In Progress'],['#dbeafe','Sick Day'],['#f3f4f6','No School / Day Off'],['#fee2e2','Needs Attention']].map(([color, label]) => (
+          {[['#dcfce7','Finalized'],['#fef3c7','In Progress'],['#dbeafe','Sick Day'],['#f3f4f6','No School / Day Off'],['#fee2e2','Needs Attention'],...((compliance.baseDays||0) > 0 ? [['#e5e7eb','Pre-app (via baseDays)']] : [])].map(([color, label]) => (
             <div key={label} className="p-cal-legend-item">
               <div className="p-cal-legend-dot" style={{background:color, border:'1px solid rgba(0,0,0,0.1)'}} />
               <span>{label}</span>
