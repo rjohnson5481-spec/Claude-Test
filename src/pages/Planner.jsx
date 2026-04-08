@@ -7,7 +7,7 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v2.5';
+const APP_VERSION = 'v2.6';
 const ALLOWED_EMAILS = ['rjohnson5481@gmail.com'];
 const SCHOOL_YEAR_START = new Date('2025-08-25');
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -741,6 +741,7 @@ export default function Planner() {
 
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const chatFileInputRef = useRef(null);
 
   const todayId = getTodayId();
   const weekId = getWeekIdWithOffset(weekOffset);
@@ -3248,6 +3249,28 @@ export default function Planner() {
                 ))}
               </div>
             )}
+            {/* Hidden file input for chat attachments */}
+            <input ref={chatFileInputRef} type="file" style={{display:'none'}}
+              onChange={async e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                e.target.value = '';
+                const content = await extractFileContent(file);
+                if (content.type === 'image') {
+                  setPendingImages(p => [...p, { base64: content.base64, type: content.mimeType }]);
+                } else {
+                  // Prepend extracted text as context for the next message
+                  const prefix = `[Attached: ${file.name}]\n${content.text.slice(0, 6000)}\n\n`;
+                  setChatInput(prev => prefix + prev);
+                }
+              }}
+            />
+            <button
+              title="Attach file or photo"
+              style={{background:'none',border:'1.5px solid rgba(255,255,255,0.25)',borderRadius:8,padding:'0.4rem 0.55rem',cursor:'pointer',fontSize:'1.1rem',minHeight:40,flexShrink:0,color:'white'}}
+              onClick={() => chatFileInputRef.current?.click()}
+              disabled={chatLoading}
+            >📎</button>
             <textarea
               placeholder="Ask anything…"
               value={chatInput}
